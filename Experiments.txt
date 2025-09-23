@@ -1,0 +1,157 @@
+myparameters: 
+OLD
+
+myparameters_linear: kdv(256), 100 samples 
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);
+
+
+myparameters_linear_large: kdv(256), 100 samples
+model = UNet(;
+    nspace = grid.n,
+    channels = [16, 32],
+    nresidual = 4,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);
+
+
+myparameters_GVP: kdv(256), 100 samples 
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);
+
+
+myparameters_linear_large2: kdv(256), 150 samples
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8, 16, 16],
+    nresidual = 4,
+    t_embed_dim = 16,
+    y_embed_dim = 16,
+    device,
+)
+
+ps_freeze, st_freeze = train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 150, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);
+
+
+
+myparameters_linear_batchnorm: kdv(256), 100 samples 
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);
+
+
+myparameters_linear_batchnorm_u: kdv(256), 100 samples with output full next prediction
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);
+
+
+
+myparameters_linear_batchnorm_les: kdv(256), 100 samples with output les error
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);

@@ -46,12 +46,14 @@ ResidualLayer(nspace, nchan, nt, ny) =
     @compact(;
         block1 = Chain(
             gelu,
-            LayerNorm((nspace, nchan)),
+            # LayerNorm((nspace, nchan)),
+            BatchNorm(nchan),
             CircularConv((3,), nchan => nchan; pad = 1),
         ),
         block2 = Chain(
             gelu,
-            LayerNorm((nspace, nchan)),
+            # LayerNorm((nspace, nchan)),
+            BatchNorm(nchan),
             CircularConv((3,), nchan => nchan; pad = 1),
         ),
         time_adapter = Chain(
@@ -125,12 +127,13 @@ UNet(; nspace, channels, nresidual, t_embed_dim, y_embed_dim, device) =
     @compact(;
         init_conv = Chain(
             CircularConv((3,), 1 => channels[1]; pad = 1),
-            LayerNorm((nspace, channels[1])),
+            # LayerNorm((nspace, channels[1])),
+            BatchNorm(channels[1]),
             gelu,
         ),
         time_embedder = FourierEncoder(t_embed_dim, device),
         y_embedders = map(
-            i -> CircularConv((3,), 1 => y_embed_dim; stride = 2^(i - 1), pad = 1),
+            i -> CircularConv((3,), 1 => y_embed_dim, gelu; stride = 2^(i - 1), pad = 1),
             1:length(channels),
         ),
         encoders = map(
@@ -208,27 +211,66 @@ function create_dataloader(grid, data, batchsize, rng)
     DataLoader((y, z); batchsize, shuffle = true, partial = false, rng)
 end
 
+function brownian_periodic(z, sigma)
+    T = eltype(z)
+    nx, s... = size(z)
+    colons = ntuple(Returns(:), length(s))
+    u = randn(T, nx + 1, s...)
+    u = cumsum(u; dims=1) 
+    u .*= sigma/sqrt(T(nx))
+    x = range(T(0), T(1), nx + 1)
+    l = @. x * u[end:end, colons...] + (1-x) * u[1:1, colons...]
+    v = u - l
+    v = v[1:end-1, colons...]
+    vmean = sum(v; dims=1) / nx
+    v .-= vmean
+    v
+end
+
+
 """
 Train an flow-matching ODE to predict next state (`z`) from current state (`y`).
 The ODE has Gaussian initial contitions `x0` and evolve via `dx = model(x, t, y) dt`
 from time 0 to 1.
 The target trajectory `x` is a linear interpolation between `x0` and `z`.
 """
-function train(; model, rng, nepoch, dataloader, opt, device)
-    ps, st = Lux.setup(rng, model) |> device
+function train(; model, rng, nepoch, dataloader, opt, device, a, b, params = nothing)
+    ps, st = 
+    if isnothing(params)
+        Lux.setup(rng, model) |> device
+    else
+        params |> device
+    end
     train_state = Training.TrainState(model, ps, st, opt)
     loss = MSELoss()
+    adot(t) = ForwardDiff.derivative(a, t)
+    bdot(t) = ForwardDiff.derivative(b, t)
     for iepoch = 1:nepoch, (ibatch, batch) in enumerate(dataloader)
         y, z = batch |> device
-        x0 = randn!(similar(z)) # Gaussian initial conditions
-        t = rand!(similar(z, 1, 1, size(z, ndims(z)))) # Pseudo-times
-        x = @. t * z + (1 - t) * x0 # Linear interpolation
-        u = @. z - x0 # Linear conditional vector field
+        nsample = size(z, ndims(z))
+        # x0 = randn!(similar(z)) # Gaussian initial conditions
+        T = eltype(z)
+        x0 = brownian_periodic(z, T(1.0)) |> device # Brownian initial conditions
+        t = rand!(similar(z, 1, 1, nsample)) # Pseudo-times
+        x = @. a(t) * z + b(t) * x0 # Linear interpolation
+        u = @. adot(t) * z + bdot(t) * x0 # Linear conditional vector field
+            # @show size(x) size(t) size(y) size(u) size(x0); error()
+        # @show typeof(y) typeof(z) typeof(t) typeof(x) typeof(u); error()
+
+        # A 4-Tuple containing:
+        # 
+        #   - `grads`: Computed Gradients.
+        #   - `loss`: Loss from the objective function.
+        #   - `stats`: Any computed statistics from the objective function.
+        #   - `ts`: Updated Training State
+
         _, l, _, train_state =
             Training.single_train_step!(AutoZygote(), loss, ((x, t, y), u), train_state)
         ibatch % 1 == 0 && @info "iepoch = $iepoch, ibatch = $ibatch, loss = $l"
+
+
     end
     ps_freeze = train_state.parameters
     st_freeze = train_state.states
-    (x, t, y) -> first(model((x, t, y), ps_freeze, Lux.testmode(st_freeze)))
+    ps_freeze, st_freeze
 end
