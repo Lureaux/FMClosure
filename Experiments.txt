@@ -155,3 +155,47 @@ train(;
     a,
     b,
 );
+
+
+myparameters_linear_batchnorm_brownian: kdv(256), 100 samples, Brownian noise 
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);
+
+
+myparameters_linear_batchnorm_cont_brownian: kdv(256), 100 samples, Brownian noise, continuous time
+model = UNet(;
+    nspace = grid.n,
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+)
+
+train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 100, Xoshiro(0)),
+    opt = AdamW(1.0f-3),
+    device,
+    a,
+    b,
+);

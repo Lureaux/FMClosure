@@ -227,6 +227,37 @@ function brownian_periodic(z, sigma)
     v
 end
 
+function pseudo_timestepping(model, nsubstep, x, t, y, a, b, adot, bdot, sigma, info_i)
+    h = 1.0f0 / nsubstep
+    for isub = 1:nsubstep # Pseudo-time stepping
+        if info_i
+            @info isub
+        end
+        model_u = model(x, t, y)
+        score = @. (a(t) .* model_u - adot(t) .* x) ./ (b(t).^2 .* adot(t) - a(t) .* bdot(t) .* b(t))
+        x += h * (model_u + score .* sigma(t).^2 /2) + sigma(t) .* sqrt(h) .* randn(size(model_u))
+        @. t += h
+    end
+    x, t
+end
+
+function model_eval(model, y, noise_type, a, b, nsubstep, sigma, sigma_brown, info_i, device)
+    adot(t) = ForwardDiff.derivative(a, t)
+    bdot(t) = ForwardDiff.derivative(b, t)
+    t = fill(0.0f0, 1, 1, size(y, 3)) |> device
+
+    if noise_type == "gaussian"
+        x = randn!(similar(y))
+    elseif noise_type == "brownian"
+        x = brownian_periodic(similar(y), sigma_brown)
+    else
+        error("Unknown noise type: $noise_type")
+    end
+
+    x, t = pseudo_timestepping(model, nsubstep, x, t, y, a, b, adot, bdot, sigma, info_i)
+
+    x
+end
 
 """
 Train an flow-matching ODE to predict next state (`z`) from current state (`y`).
@@ -273,4 +304,58 @@ function train(; model, rng, nepoch, dataloader, opt, device, a, b, params = not
     ps_freeze = train_state.parameters
     st_freeze = train_state.states
     ps_freeze, st_freeze
+end
+
+
+
+"Get grid spacing."
+dx(g::Grid) = g.l / g.n
+
+
+"Call `f(args..., i)` for all grid indices `i`."
+apply!(f, g::Grid, args) =
+    Threads.@threads for i = 1:g.n
+        @inbounds f(args..., i)
+    end
+
+
+"Korteweg-de Vries equation right hand side."
+@inline function force!(f, u, g::Grid, _, i)
+    h = dx(g)
+    a = (u[i] + u[i-1|>g])^2 / 4
+    b = (u[i+1|>g] + u[i])^2 / 4
+    # b = u[i+1|>g]^2 / 2
+    # a = u[i-1|>g]^2 / 2
+    f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
+end
+
+function rk4_con!(u, cache, grid, visc, dt, model, noise_type, a, b, nsubstep, sigma, sigma_brown, device)
+    info_i = false
+    v, k1, k2, k3, k4 = cache
+    apply!(force!, grid, (k1, u, grid, visc))
+    k1 += model_eval(model, reshape(u, :, 1, 1), noise_type, a, b, nsubstep, sigma, sigma_brown, info_i, device)
+    @. v = u + dt / 2 * k1
+    apply!(force!, grid, (k2, v, grid, visc))
+    k2 += model_eval(model, reshape(v, :, 1, 1), noise_type, a, b, nsubstep, sigma, sigma_brown, info_i, device)
+    @. v = u + dt / 2 * k2
+    apply!(force!, grid, (k3, v, grid, visc))
+    k3 += model_eval(model, reshape(v, :, 1, 1), noise_type, a, b, nsubstep, sigma, sigma_brown, info_i, device)
+    @. v = u + dt * k3
+    apply!(force!, grid, (k4, v, grid, visc))
+    k4 += model_eval(model, reshape(v, :, 1, 1), noise_type, a, b, nsubstep, sigma, sigma_brown, info_i, device)
+    @. u += dt * (k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6)
+end
+
+function sim_data_con(; u, grid, params, nsubstep, ntime, dt, model, noise_type, a, b, nsubstep_pseudo, sigma, sigma_brown, device)
+    outputs = zeros(grid.n, ntime)
+    adaptive = isnothing(dt)
+    cache = similar(u), similar(u), similar(u), similar(u), similar(u)
+    outputs[:, 1] = u
+    for itime = 2:ntime
+        for isubstep = 1:nsubstep
+            rk4_con!(u, cache, grid, params, dt, model, noise_type, a, b, nsubstep_pseudo, sigma, sigma_brown, device)
+        end
+        outputs[:, itime] = u
+    end
+    outputs
 end

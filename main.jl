@@ -11,14 +11,16 @@ using Lux
 using MLUtils
 using NNlib
 using Optimisers
+using LinearAlgebra
 # using WGLMakie
 using Random
 using Zygote
 using ForwardDiff
+using Statistics
+using KernelDensity
 using FMClosure
 
 outdir = joinpath(@__DIR__, "output") |> mkpath
-# CairoMakie.activate!() 
 
 
 # Define problem
@@ -90,7 +92,7 @@ data_test = create_data(;
 );
 
 
-# Experiment with datasets
+# Load DNS data
 (; grid, params) = kdv(1024)
 grid_dns = grid
 (; grid, params) = kdv(256)
@@ -106,140 +108,19 @@ data_dns =  create_data_dns(;
     dt = 1e-5,
     rng = Xoshiro(0),
 );
+
 # [1]: u simulated on fine grid 
 # [2]: difference between fine and coarse grid
 # [3]: u simulated on coarse grid
+# [4]: difference between u_bar_sim and u_bar
 
 using JLD2
+
+data_dns = let
 filename = "mydata_dns.jld2"
-# jldsave(filename; data_dns)
-data_dns = load(filename, "data_dns")
-
-
-data_dns[4]
-
-for isample = 1:100
-    @info "isample = $isample"
-    u_test = data_dns[1][:,1,isample]
-    u_test_bar = filter_u(u_test, grid.l, 1024, 256, "spectral")
-
-    u_sim_test =  sim_data(;
-        u = u_test_bar, 
-        grid = grid_les, 
-        params, 
-        nsubstep = 1000, 
-        ntime = 100, 
-        dt = 1e-5)
-    data_dns[3][:,:,isample] = u_sim_test
+load(filename, "data_dns")
 end
 
-for isample = 1:100
-    @info "isample = $isample"
-    for itime = 1:99
-        data_dns[2][:,itime,isample] = filter_u(data_dns[1][:,itime+1,isample], grid.l, 1024, 256, "spectral") - data_dns[3][:,itime+1,isample]
-    end
-    u_next_mat = sim_data(;
-        u = data_dns[1][:,100,isample], 
-        grid = grid_dns, 
-        params, 
-        nsubstep = 1000, 
-        ntime = 2, 
-        dt = 1e-5)
-    u_next = u_next_mat[:,2]    
-    u_next_bar = filter_u(u_next, grid.l, 1024, 256, "spectral")
-
-    v_next_mat = sim_data(;
-        u =  data_dns[3][:,100,isample], 
-        grid = grid_les, 
-        params, 
-        nsubstep = 1000, 
-        ntime = 2, 
-        dt = 1e-5)
-    v_next = v_next_mat[:,2]
-
-    data_dns[2][:,100,isample] = u_next_bar - v_next
-end
-
-
-
-for isample = 1:100
-    @info "isample = $isample"
-    for itime = 1:99
-        u_bar = filter_u(data_dns[1][:,itime,isample], grid.l, 1024, 256, "spectral")
-        u_bar_next_mat = sim_data(;
-            u = u_bar, 
-            grid = grid_les, 
-            params, 
-            nsubstep = 1000, 
-            ntime = 2, 
-            dt = 1e-5)
-        u_bar_next = u_bar_next_mat[:,2]    
-        data_dns[4][:,itime,isample] = filter_u(data_dns[1][:,itime+1,isample], grid.l, 1024, 256, "spectral") - u_bar_next
-    end
-    u_bar = filter_u(data_dns[1][:,100,isample], grid.l, 1024, 256, "spectral")
-    u_bar_next_mat = sim_data(;
-        u = u_bar, 
-        grid = grid_les, 
-        params, 
-        nsubstep = 1000, 
-        ntime = 2, 
-        dt = 1e-5)
-    u_bar_next = u_bar_next_mat[:,2]    
-
-    u_next_mat = sim_data(;
-        u = data_dns[1][:,100,isample], 
-        grid = grid_dns, 
-        params, 
-        nsubstep = 1000, 
-        ntime = 2, 
-        dt = 1e-5)
-    u_next = u_next_mat[:,2] 
-    u_next_bar = filter_u(u_next, grid.l, 1024, 256, "spectral")
-
-    data_dns[4][:,100,isample] = u_next_bar - u_bar_next
-end
-
-
-
-u_sim_test - data_dns[3][:,:,1]
-t_sample = 1
-# maximum( (u_sim_test[:,2] + data_dns[2][:,1,1]) - filter_u(data_dns[1][:,2,1], grid.l, 1024, 256, "spectral"))
-maximum( (data_dns[3][:,t_sample+1,1] + data_dns[2][:,t_sample,1]) - filter_u(data_dns[1][:,t_sample+1,1], grid.l, 1024, 256, "spectral"))
-maximum(data_dns[4])
-
-test = sim_data(;
-    u = filter_u(data_dns[1][:,10,1], grid.l, 1024, 256, "spectral"), 
-    grid = grid_les, 
-    params, 
-    nsubstep = 1000, 
-    ntime = 2, 
-    dt = 1e-5)
-minimum(test[:,2]+data_dns[4][:,10,1] - filter_u(data_dns[1][:,11,1], grid.l, 1024, 256, "spectral"))
-
-size(data_dns[1])
-let
-    # isample = 1
-    # itime = 10
-    fig = Figure()
-    x = points(grid)
-    ax = Axis(fig[1, 1])
-    lines!(ax, points(Grid(30.0, 1024)), data_dns[1][:,2,1])
-    lines!(ax, points(Grid(30.0, 1024)), data_dns[1][:,1,1] + data_dns[2][:,1,1])
-    fig
-end
-for i = 1:100
-    fig = Figure()
-    x = points(grid)
-    ax = Axis(fig[1, 1])
-    lines!(ax, points(Grid(30.0, 1024)), data_dns[1][:,i,1])
-    display(fig)
-end
-
-filter_u(data_test[1][:,1,1], 2π, 1024, 256, "spectral")
-grid
-
-data[1] |> length |> x -> 1.0 * x
-data
 
 
 # Show two successive states
@@ -264,8 +145,6 @@ let
     ax = Axis(fig[1, 1])
     lines!(ax, x, data[1][:, itime, isample])
     lines!(ax, x, data[2][:, itime, isample])
-    # lines!(ax, x, data[1][:, itime, isample] + data[2][:, itime, isample])
-    # lines!(ax, x, data[1][:, itime+1, isample])
     fig
 end
 
@@ -282,12 +161,8 @@ model = UNet(;
 )
 # model, name = FMClosure.large2(device)
 # model, name = FMClosure.small(device)
-const πf = Float32(π)
 
-# Experiment
-cospi(0.25)
-cos(pi * 0.25)
-similar(data[1][:,1,1])
+const πf = Float32(π)
 
 # Linear
 a(t) = t
@@ -305,18 +180,19 @@ adot(t) = ForwardDiff.derivative(a, t)
 bdot(t) = ForwardDiff.derivative(b, t)
 
 
-
+# Prepare DNS simulated data
 data_dns_bar = similar(data_dns[4])
+closures = similar(data_dns[4])
 for isample = 1:size(data_dns[4], 3)
     for itime = 1:size(data_dns[4], 2)
-        data_dns_bar[:, itime, isample] = filter_u(data_dns[1][:, itime, isample], grid.l, 1024, 256, "spectral")
+        data_dns_bar[:, itime, isample] = filter_u(data_dns[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.000001)
+        closures[:, itime, isample] = closureterm(data_dns[1][:, itime, isample], grid_dns, grid_les)
     end
 end
-data = (data_dns_bar, data_dns[4])
+# data = (data_dns_bar, data_dns[4])
+data = (data_dns_bar, closures)
 
 
-size(data[2], ndims(data[2]))
-rand!(similar(data[2], 1, 1, 100))
 
 # Train model
 # ps_freeze, st_freeze = train(;
@@ -334,112 +210,62 @@ rand!(similar(data[2], 1, 1, 100))
 
 # Load/save trained model
 using JLD2
-ic_type = "gaussian"
-filename = "myparameters_linear_batchnorm_les.jld2"
+ic_type = "brownian"
+filename = "myparameters_linear_batchnorm_cont_brownian.jld2"
 # jldsave(filename; ps_freeze, st_freeze)
 ps_freeze, st_freeze = load(filename, "ps_freeze", "st_freeze");
 unet = (x, t, y) -> first(model((x, t, y), ps_freeze, Lux.testmode(st_freeze)))
 
 
-# x = 1:5 |> collect
-# y = reshape(20:20:80, 1, :) |> collect
-# @. x + y 
-# size(x)
-
 
 # Define noise schedule
+
 sigma(t) = 0.0f0 * ones(size(t))
 # sigma(t) = sqrt.(a(t))
 # sigma(t) = 1*sin.(π*t)
 # sigma(t) = 2*(adot(t) .*a(t) - bdot(t) .* a(t).^2 ./ b(t))
 
+noise_type = "gaussian"
+noise_type = "brownian"
+sigma_brown = 1.0
 
+
+# Method 1: Direct prediction of u(t_{n+1}) - u(t_n)
 # Plot one prediction
 let
     isample = 1
     itime = 1
-    dev = gpu_device()
     y, z = data_test
     y = reshape(y[:, itime, isample], :, 1, 1) |> f32 |> device
     z = reshape(z[:, itime, isample], :, 1, 1) |> f32 |> device
-    x = randn!(similar(z))
-    # x = brownian_periodic(x, 1.0)
-    x_init = copy(x)
-    # x_brown = copy(x)
-    # x_brown[1] = 0.0
-    # for i = 2:length(x_brown)
-    #     x_brown[i] = x_brown[i-1] + sqrt(2π/length(x_brown)) * randn()
-    # end 
-    # x = x_brown
-    nstep = 10
-    t = fill(0.0f0, 1, 1, size(z, 3)) |> dev
-    h = 1.0f0 / nstep
-    for i = 1:nstep
-        @info i
-        u = unet(x, t, y)
-        # @. x += h * u
-        # score = (u - adot(t) / a(t) * x) / (b(t)^2 * adot(t) / a(t) - bdot(t) * b(t))
-        score = @. (a(t) .* u - adot(t) .* x) ./ (b(t).^2 .* adot(t) - a(t) .* bdot(t) .* b(t))
-        x += h * (u + score .* sigma(t).^2 /2) + sigma(t) .* sqrt(h) .* randn(size(u))
-        @. t += h
-    end
+
+    nsubstep = 10
+
+    x = model_eval(unet, y, noise_type , a, b, nsubstep, sigma, sigma_brown, true, device)
+
     fig = Figure()
     ax = Axis(fig[1, 1])
     input = y[:] |> cpu_device()
     target = z[:] |> cpu_device()
     prediction = x[:] |> cpu_device()
-    # lines!(ax, points(grid), input; label = "Input")
-    # lines!(ax, points(grid), target; label = "Target")
-    # lines!(ax, points(grid), prediction; label = "Prediction")
     lines!(ax, points(grid), input + target; label = "Target")
     lines!(ax, points(grid), input + prediction; label = "Prediction")
-    # lines!(ax, points(grid), x_init[:]; label = "Noise")
-    # lines!(ax, points(grid), x_brown[:]; label = "Brownian Noise")
-    # lines!(ax, points(grid), x[:]; label = "Prediction")
     axislegend(ax)
     save("$outdir/prediction.pdf", fig; backend = CairoMakie)
     fig
 end
 
 
-u = 256 + 1 |> randn |> cumsum |> x -> 0.1x
-x = range(0, 1, 256 + 1)
-l = @. x * u[end] + (1-x) * u[1]
-v = u - l
-let fig = Figure()
-    ax = Axis(fig[1, 1])
-    lines!(ax, x[1:end-1], u[1:end-1]; label = "u")
-    lines!(ax, x[1:end-1], l[1:end-1]; label = "linear")
-    lines!(ax, x[1:end-1], v[1:end-1]; label = "u - linear")
-    axislegend(ax)
-    fig
-end
-
 # Plug FM model back into physical time stepping loop
 let
     isample = 1
     inputs, _ = data_test
-    # ntime = size(y, 2)
-    ntime = 50
+    ntime = 15
     y = reshape(inputs[:, 1, isample], :, 1, 1) |> f32 |> device
-    x = similar(y) |> device
-    nsample = size(y, 3)
-    t = fill(0.0f0, 1, 1, nsample) |> device
-    nsubstep = 100
-    h = 1.0f0 / nsubstep
+    nsubstep = 10
     for itime = 1:ntime # Physical time stepping
         @show itime
-        fill!(t, 0)
-        # randn!(x) # Random initial conditions
-        x = brownian_periodic(x, 1.0) # Random initial conditions
-        for isub = 1:nsubstep # Pseudo-time stepping
-            u = unet(x, t, y)
-            # @. x += h * u
-            score = @. (a(t) .* u - adot(t) .* x) ./ (b(t).^2 .* adot(t) - a(t) .* bdot(t) .* b(t))
-            # @. x += h * (u + score * sigma^2 /2) + sigma * sqrt(h) * randn()
-            x += h * (u + score .* sigma(t).^2 /2) + sigma(t) .* sqrt(h) .* randn(size(u))
-            @. t += h
-        end
+         x = model_eval(unet, y, noise_type , a, b, nsubstep, sigma, sigma_brown, false, device)
         @. y += x # x is the physical step
     end
     fig = Figure()
@@ -455,48 +281,20 @@ let
     fig
 end
 
-isample = 1
-inputs, _ = data_test
-# ntime = size(y, 2)
-ntime = 10
-y = reshape(inputs[:, 1, isample], :, 1, 1) |> f32 |> device
-x = similar(y) |> device
 
-let fig = Figure()
-    y = reshape(inputs[:, 1, isample], :, 1, 1) |> f32 |> device
-    x = brownian_periodic(y, 1.0)
-    print(sum(x))
-    ax = Axis(fig[1, 1])
-    lines!(ax, x[:]; label = "u - linear")
-    axislegend(ax)
-    fig
-end
-
-
-
+# Method 2: Prediction of error from DNS/LES simulation
 # Plot one prediction
 let
     isample = 1
     itime = 10
-    dev = gpu_device()
     y, z = data
     y = reshape(y[:, itime, isample], :, 1, 1) |> f32 |> device
     z = reshape(z[:, itime, isample], :, 1, 1) |> f32 |> device
-    x = randn!(similar(z))
-    nstep = 10
-    t = fill(0.0f0, 1, 1, size(z, 3)) |> dev
-    h = 1.0f0 / nstep
-    for i = 1:nstep
-        @info i
-        u = unet(x, t, y)
-        # @. x += h * u
-        # score = (u - adot(t) / a(t) * x) / (b(t)^2 * adot(t) / a(t) - bdot(t) * b(t))
-        score = @. (a(t) .* u - adot(t) .* x) ./ (b(t).^2 .* adot(t) - a(t) .* bdot(t) .* b(t))
-        x += h * (u + score .* sigma(t).^2 /2) + sigma(t) .* sqrt(h) .* randn(size(u))
-        @. t += h
-    end
-    fig = Figure()
-    ax = Axis(fig[1, 1])
+
+    nsubstep = 10
+
+    x = model_eval(unet, y, noise_type, a, b, nsubstep, sigma, sigma_brown, true, device)
+
     input = y[:] |> cpu_device()
     input_next_mat = sim_data(; u = input, 
         grid = grid_les, 
@@ -507,6 +305,9 @@ let
     input_next = input_next_mat[:,2]
     target = z[:] |> cpu_device()
     prediction = x[:] |> cpu_device()
+
+    fig = Figure()
+    ax = Axis(fig[1, 1])
     # lines!(ax, points(grid), input; label = "Input")
     # lines!(ax, points(grid), target; label = "Target")
     # lines!(ax, points(grid), prediction; label = "Prediction")
@@ -521,30 +322,15 @@ end
 let
     isample = 1
     inputs, target_exact = data
-    # ntime = size(y, 2)
-    ntime = 5
+ 
+    ntime = 20
     y = reshape(inputs[:, 1, isample], :, 1, 1) |> f32 |> device
-    x = similar(y) |> device
-    nsample = size(y, 3)
-    t = fill(0.0f0, 1, 1, nsample) |> device
+
     nsubstep = 10
-    h = 1.0f0 / nsubstep
     for itime = 1:ntime # Physical time stepping
         @show itime
-        fill!(t, 0)
-        randn!(x) # Random initial conditions
-        for isub = 1:nsubstep # Pseudo-time stepping
-            u = unet(x, t, y)
-            # @. x += h * u
-            score = @. (a(t) .* u - adot(t) .* x) ./ (b(t).^2 .* adot(t) - a(t) .* bdot(t) .* b(t))
-            # @. x += h * (u + score * sigma^2 /2) + sigma * sqrt(h) * randn()
-            x += h * (u + score .* sigma(t).^2 /2) + sigma(t) .* sqrt(h) .* randn(size(u))
-            @. t += h
-        end
-        # function f!(du, u) 
-        #     apply!(force!, grid, (du, u, grid, params))
-        #     du .+= x
-        # end
+        
+        x = model_eval(unet, y, noise_type, a, b, nsubstep, sigma, sigma_brown, false, device)
 
         y_mat = sim_data(
             # f!; 
@@ -557,8 +343,8 @@ let
             dt = 1e-5)
         y = y_mat[:,2]
         y = reshape(y, :, 1, 1)
-        # @. y += x # x is the physical step
-        @. y += target_exact[:, itime, isample] # x is the physical step
+        @. y += x # x is the physical step
+        # @. y += target_exact[:, itime, isample] # x is the physical step
     end
     fig = Figure()
     ax = Axis(fig[1, 1])
@@ -572,3 +358,246 @@ let
     save("$outdir/prediction.pdf", fig; backend = CairoMakie)
     fig
 end
+
+# Method 3: Continuous closure term
+# Plot one prediction
+data_test = create_data(;
+    grid = grid_dns,
+    params,
+    nsample = 1,
+    ntime = 10,
+    nsubstep = 1000,
+    dt = 1e-5,
+    rng = Xoshiro(1),
+    );
+let
+    isample = 1
+    itime = 1
+    y = filter_u(data_test[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.000001)
+    y = reshape(y, :, 1, 1) |> f32 |> device
+    target = filter_u(data_test[1][:, end, isample], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.000001)
+
+    nsubstep_pseudo = 10
+    
+    input = y[:] |> cpu_device()
+    input_copy = copy(input)
+    input_next_mat = sim_data_con(; u = input_copy, 
+        grid = grid_les,
+        params,
+        nsubstep = 10, 
+        ntime = 10, 
+        dt = 1e-3,
+        model = unet, noise_type, a, b, nsubstep_pseudo, sigma, sigma_brown, device)
+    input_next = input_next_mat[:,end]
+    print(norm(input_next - target)/norm(target))
+    # prediction = x[:] |> cpu_device()
+    fig = Figure()
+    ax = Axis(fig[1, 1])
+    # lines!(ax, points(grid), input; label = "Input")
+    lines!(ax, points(grid), target; label = "True target")
+    lines!(ax, points(grid), input_next; label = "Prediction")
+    axislegend(ax)
+    save("$outdir/prediction.pdf", fig; backend = CairoMakie)
+    fig
+end
+
+s = 1
+d = "toto"
+function g(x, s, d)
+    println(d)
+    x + s
+end
+
+
+f(2)
+
+rk(x -> g(x, s, d), u, dt)
+
+
+# (Periodic) Brownian motion with mean zero
+u = 256 + 1 |> randn |> cumsum |> x -> 0.1x
+x = range(0, 1, 256 + 1)
+l = @. x * u[end] + (1-x) * u[1]
+v = u - l
+nx, s... = size(x[1:end-1])
+colons = ntuple(Returns(:), length(s))
+vmean = sum(v[1:end-1, colons...]; dims=1) / 256
+
+let fig = Figure()
+    ax = Axis(fig[1, 1])
+    lines!(ax, x[1:end-1], u[1:end-1]; label = "u")
+    lines!(ax, x[1:end-1], l[1:end-1]; label = "linear")
+    lines!(ax, x[1:end-1], v[1:end-1]; label = "u - linear")
+    # lines!(ax, x[1:end-1], v[1:end-1] .- vmean; label = "u - linear - mean")
+    axislegend(ax)
+    fig
+end
+
+let fig = Figure()
+    ax = Axis(fig[1, 1])
+    lines!(ax, x[1:end-1], brownian_periodic(x[1:end-1], 1.0); label = "Periodic Brownian Motion")
+    axislegend(ax)
+    save("$outdir/brown_noise.png", fig; backend = CairoMakie)
+    fig
+end
+
+
+# Square wave and its filtered version
+function u_sum(x, N, L)
+    ω = 2* π / L  
+    sum(1:N) do i
+        j = 2i-1
+        (2/π) * sin(j * ω * x) / j
+    end
+end
+L = 1.0
+N = 1024
+Nbar = 256
+x = range(00., L, N + 1)
+y = @. u_sum(x, 5000, L)
+y = vec(1.0*(0.0 .< x.-0.25 .< 0.5)).-0.5 
+
+y_bar = filter_u(y, L, N+1, Nbar+1, "top_hat", 0.01)
+y_bar_spectral = spectral_cutoff(y, N+1, Nbar+1)
+y_bar
+let fig = Figure()
+    ax = Axis(fig[1, 1])
+    # lines!(ax, x, vec(y); label = "y_bar")
+    lines!(ax, range(0.0, L, Nbar + 1), y_bar)
+    # lines!(ax, range(0.0, L, Nbar + 1), y_bar_spectral; label = "y_bar_spectral")
+    # axislegend(ax)
+    # save("$outdir/sqwave_tophat.png", fig; backend = CairoMakie)
+    fig
+end
+
+
+# Energy distribution of closure term with KL divergence
+energies = zeros(100)
+energies_eles = zeros(100)
+n_les = 32
+itime = 38
+for i = 1:100
+    # k, spec = spectrum(data[1][:,end,i], grid_les)
+    filtered_u = filter_u(data_dns[1][:,i,itime], grid_dns.l, grid_dns.n, n_les, "spectral", 0.00001)
+    energy = sum(abs2, filtered_u)/(2*n_les)
+    energies[i] = energy
+    # spec_mean = sum(spec)
+    # energies[i] = spec_mean
+end
+for i = 1:100
+    u_sim = sim_data(; u = filter_u(data_dns[1][:,i,1], grid_dns.l, grid_dns.n, n_les, "spectral", 0.00001), 
+        grid = Grid(30.0, n_les), 
+        params, 
+        nsubstep = 10, 
+        ntime = itime, 
+        dt = 1e-3)
+    filtered_u = u_sim[:,end]
+    energy = sum(abs2, filtered_u)/(2*n_les)
+    energies_eles[i] = energy
+end
+
+let
+    nsubstep_pseudo = 10
+    isample = 99
+    u_sim = sim_data(; u = filter_u(data_dns[1][:,isample,1], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.00001), 
+        grid = grid_les, 
+        params, 
+        nsubstep = 10, 
+        ntime = itime, 
+        dt = 1e-3)
+        # model = unet, noise_type, a, b, nsubstep_pseudo, sigma, sigma_brown, device)
+    filtered_u_eles = u_sim[:,end]
+    @show sum(abs2, filtered_u_eles)/(2*grid_les.n)
+    fig = Figure()
+    x = points(Grid(30.0, grid_les.n))
+    ax = Axis(fig[1, 1])
+    # lines!(ax, points(Grid(30.0, 1024)), data_dns[1][:,isample,38])
+    lines!(ax, points(Grid(30.0, grid_les.n)), filter_u(data_dns[1][:,isample,time], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.00001))
+    lines!(ax, x, filtered_u_eles)
+    # lines!(ax, x, filtered_u_eles)
+    fig
+end
+
+
+lines(energies)
+ylims!(0, 2.1)
+current_figure()
+let
+    kde_energy = kde(energies)
+    points = range(0.0, 1.0, length=512)  
+    # lines(points, pdf(kde_energy, points), label="KDE")
+    lines(kde_energy.x, kde_energy.density, label="KDE")
+    lines!(kde(energies_eles).x, kde(energies_eles).density, label="KDE")
+    xlims!(0, 1)
+    ylims!(0, 25)
+    current_figure()
+end
+
+aa, bb = extrema(energies)
+(bb-aa)/mean(energies)
+k, spec = spectrum(data[1][:,end,41], grid_les)
+fig = Figure()
+ax = Axis(fig[1, 1];
+    xlabel="k",
+    ylabel="S(k)",
+    xscale=log10,
+    yscale=log10,
+    title = "",
+)
+lines!(ax, k, spec)
+fig
+mean(spec)
+
+
+function find_KL_range(a, b, tol_per, npoints)
+    ka = kde(a)
+    kb = kde(b)
+    tol_a = tol_per*maximum(ka.density)
+    tol_b = tol_per*maximum(kb.density)
+    ileft_a = findfirst(>(tol_a), ka.density) 
+    ileft_b = findfirst(>(tol_b), kb.density) 
+    iright_a = findlast(>(tol_a), ka.density) 
+    iright_b = findlast(>(tol_b), kb.density) 
+
+    left = max(ka.x[ileft_a], kb.x[ileft_b])
+    right = min(ka.x[iright_a], kb.x[iright_b])
+    if left >= right
+        error("No overlapping support between the two distributions.")
+    end
+    points = range(left, right, npoints)
+    points
+end
+
+function KL(a, b, tol_per = 1e-5, npoints = 2048)
+    ka = kde(a)
+    kb = kde(b)
+    points = find_KL_range(a, b, tol_per, npoints)
+    pa = pdf(ka, points)
+    pb = pdf(kb, points)
+    # tol = 1e-10
+    # pa = max.(pa, tol)
+    # pb = max.(pb, tol)
+    kl = sum(pb .* log.(pb ./ pa)) # * (right - left) / npoint
+    kl
+end
+
+name = "toto"
+file = "results_$(name).txt"
+
+KL(energies, energies)
+KL(energies, energies .+ 0.002)
+KL(energies .+ 0.002, energies)
+
+
+points_KL = find_KL_range(energies, energies_eles, 1e-5, 2048)
+pdf(kde(energies), points_KL) |> scatter
+KL(energies, energies_eles, 1e-1, 10)
+
+pdf(kde(energies), points_KL)
+KL(rand(1000), rand(1000), 1e-5, 10)
+kde(rand(100))
+kde(energies)
+(energies-energies_eles)./energies_eles |> scatter
+
+
+KL(rand(1000), rand(1000), 1e-5, 10)

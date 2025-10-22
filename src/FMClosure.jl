@@ -18,8 +18,8 @@ export Grid,
     points, force!, forward_euler!, rk4!, propose_timestep, randomfield, create_data
 export UNet, create_dataloader, train
 export create_data_dns, sim_data
-export spectral_cutoff
-export filter_u
+export spectral_cutoff, spectrum
+export filter_u, closureterm, pseudo_timestepping, model_eval, sim_data_con
 export brownian_periodic
 
 

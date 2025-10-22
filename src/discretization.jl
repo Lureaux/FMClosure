@@ -44,11 +44,12 @@ end
 function closureterm(u, g_dns::Grid, g_les::Grid)
     f = zero(u)
     apply!(force!, g_dns, (f, u, g_dns, nothing))
-    ubar = filter_u(u, g_dns.l, g_dns.n, g_les.n, "spectral", Δ = 0.000001)
-    fbar1 = filter_u(f, g_dns.l, g_dns.n, g_les.n, "spectral", Δ = 0.000001)
+    ubar = filter_u(u, g_dns.l, g_dns.n, g_les.n, "spectral", 0.000001)
+    fbar1 = filter_u(f, g_dns.l, g_dns.n, g_les.n, "spectral", 0.000001)
     fbar2 = zero(fbar1)
     apply!(force!, g_les, (fbar2, ubar, g_les, nothing))
     c = fbar1 - fbar2
+    c
 end
 
 function forward_euler!(u, f, grid, visc, dt)
@@ -67,6 +68,8 @@ function rk4!(u, cache, grid, visc, dt)
     apply!(force!, grid, (k4, v, grid, visc))
     @. u += dt * (k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6)
 end
+
+
 
 # function rk4!(f!, u, cache, dt)
 #     v, k1, k2, k3, k4 = cache
@@ -211,10 +214,40 @@ function sim_data(; u, grid, params, nsubstep, ntime, dt)
         # @show (isample, itime)
         for isubstep = 1:nsubstep
             # forward_euler!(u, cache, grid, params, dt)
-            rk4!(f!, u, cache, grid, params, dt)
+            rk4!(u, cache, grid, params, dt)
         end
         outputs[:, itime] = u
     end
     outputs
 end
+
+
+function create_data_con(; grid_dns, grid_les, params, nsample, nsubstep, ntime, dt, rng)
+    n_dns = grid_dns.n
+    n_les = grid_les.n
+    L = grid_dns.l
+    
+    u_bars = zeros(n_les, ntime, nsample)
+    closures = zeros(n_les, ntime, nsample)
+    adaptive = isnothing(dt)
+
+    for isample = 1:nsample
+        @show isample
+        u = randomfield(grid_dns, 10.0, rng)
+        cache = similar(u), similar(u), similar(u), similar(u), similar(u) # v, k1, k2, k3, k4
+        for itime = 1:ntime
+            # @show (isample, itime)
+            u_bar = filter_u(u, L, n_dns, n_les, "spectral", 0.000001)
+            u_bars[:, itime, isample] = u_bar
+            closure = closureterm(u, grid_dns, grid_les)
+            closures[:, itime, isample] = closure
+            for isubstep = 1:nsubstep
+                # forward_euler!(u, cache, grid, params, dt)
+                rk4!(u, cache, grid_dns, params, dt) 
+            end
+        end
+    end
+    u_bars, closures
+end
+
 
