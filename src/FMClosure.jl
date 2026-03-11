@@ -11,7 +11,7 @@ using ForwardDiff
 include("discretization.jl")
 include("unet.jl")
 include("models.jl")
-include("KdV.jl")
+# include("KdV.jl")
 
 
 export Grid,

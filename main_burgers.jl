@@ -26,7 +26,7 @@ using FMClosure
 
 outdir = joinpath(@__DIR__, "output") |> mkpath
 
-
+visc = 0.005
 
 # Define problem
 burgers(n, visc) = (; grid = Grid(2π, n), params = (; visc))
@@ -38,14 +38,14 @@ kdv(n) = (;
 
 # Plot solution
 let
-    # (; grid, params) = burgers(8192, 5e-4)
-    (; grid, params) = kdv(256)
-    ustart = randomfield(grid, 10.0, Xoshiro(0))
+    (; grid, params) = burgers(1024, visc)
+    # (; grid, params) = kdv(256)
+    ustart = randomfield(grid, 10.0, 10.0, Xoshiro(0))
     u = copy(ustart)
     # cache = similar(u) # (forward_euler)
     cache = similar(u), similar(u), similar(u), similar(u), similar(u) # (RK4)
     t = 0.0
-    tstop = 0.1
+    tstop = 0.2
     while t < tstop
         # dt = 0.3 * propose_timestep(u, grid, visc)
         dt = 1e-3
@@ -67,7 +67,7 @@ let
         framevisible = false,
     )
     rowgap!(fig.layout, 5)
-    save("$outdir/solution.pdf", fig; backend = CairoMakie)
+    # save("$outdir/solution.pdf", fig; backend = CairoMakie)
     fig
 end
 
@@ -75,16 +75,17 @@ end
 # Create dataset
 # (; grid, params) = burgers(2048, 2e-3)
 
-(; grid, params) = kdv(256)
+(; grid, params) = burgers(256, visc)
 data = create_data(;
     grid,
     params,
     nsample = 100,
-    ntime = 100,
+    ntime = 200,
     nsubstep = 10,
     dt = 1e-3,
     rng = Xoshiro(0),
 );
+data[2]
 
 data_test = create_data(;
     grid,
@@ -98,21 +99,23 @@ data_test = create_data(;
 
 
 # Load DNS data
-(; grid, params) = kdv(256)
+(; grid, params) = burgers(1024, visc)
 grid_dns = grid
-(; grid, params) = kdv(32)
+(; grid, params) = burgers(128, visc)
 grid_les = grid
 
-# data_dns_kdv =  create_data_dns(;
-#     grid_dns,
-#     grid_les,
-#     params,
-#     nsample = 100,
-#     ntime = 2000,
-#     nsubstep = 50,
-#     dt = 1e-4,
-#     rng = Xoshiro(0),
-# );
+data_dns_burgers =  create_data_dns(;
+    grid_dns,
+    grid_les,
+    params,
+    nsample = 500,
+    ntime = 200,
+    nsubstep = 1,
+    dt = 1e-3,
+    rng = Xoshiro(0),
+);
+
+data_dns_burgers[3][:,end,1]
 
 
 data_dns[4]
@@ -231,7 +234,6 @@ let
     fig
 end
 
-
 # Define model
 device = gpu_device()
 model = UNet(;
@@ -262,13 +264,32 @@ b(t) = 1 .- t.^2
 adot(t) = ForwardDiff.derivative(a, t)
 bdot(t) = ForwardDiff.derivative(b, t)
 
-data_dns = data_kdv_small_train
-# Prepare DNS simulated data
+data_dns = data_dns_burgers
+data_dns[1]
+# Prepare DNS simulated data with full next snapshot as target
+data = let
+    n_dns = grid_dns.n
+    n_les = grid_les.n
+    L = grid_dns.l
+    
+    inputs = zeros(grid_les.n, size(data_dns[1], 2)-1, size(data_dns[1], 3))
+    outputs = zeros(grid_les.n, size(data_dns[1], 2)-1, size(data_dns[1], 3))
+    for isample = 1:size(data_dns[1], 3)
+        for itime = 1:size(data_dns[1], 2)-1
+            inputs[:, itime, isample] = filter_u(data_dns[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
+            outputs[:, itime, isample] = filter_u(data_dns[1][:, itime+1, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
+        end
+    end
+    inputs, outputs
+end
+
+
+# Prepare DNS simulated data continuous
 data_dns_bar = similar(data_dns[4])
 closures = similar(data_dns[4])
 for isample = 1:size(data_dns[4], 3)
     for itime = 1:size(data_dns[4], 2)
-        data_dns_bar[:, itime, isample] = filter_u(data_dns[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.000001)
+        data_dns_bar[:, itime, isample] = filter_u(data_dns[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
         closures[:, itime, isample] = closureterm(data_dns[1][:, itime, isample], grid_dns, grid_les)
     end
 end
@@ -277,27 +298,27 @@ data = (data_dns_bar, closures)
 
 
 
-# Train model
-# ps_freeze, st_freeze = train(;
-#     model,
-#     rng = Xoshiro(0),
-#     nepoch = 10,
-#     dataloader = create_dataloader(grid, data, 64, Xoshiro(0)),
-#     opt = AdamW(1.0f-3),  # Set weight decay \lambda maybe to 10^-4
-#     device,
-#     a,
-#     b,
-#     # params = (ps_freeze, st_freeze),
-# );
+# # Train model
+ps_freeze, st_freeze = train(;
+    model,
+    rng = Xoshiro(0),
+    nepoch = 5,
+    dataloader = create_dataloader(grid, data, 64, Xoshiro(0)),
+    opt = AdamW(1.0f-3),  # Set weight decay \lambda maybe to 10^-4
+    device,
+    a,
+    b,
+    # params = (ps_freeze, st_freeze),
+);
 
 
 # Load/save trained model
 using JLD2
 ic_type = "brownian"
 # filename = "myparameters_linear_batchnorm_cont_brownian.jld2"
-filename = "myparameters_kdv_cont_brownian_10epoch.jld2"
-# jldsave(filename; ps_freeze, st_freeze)
-ps_freeze, st_freeze = load(filename, "ps_freeze", "st_freeze");
+filename = "myparameters_burgers_cont_brownian.jld2"
+jldsave(filename; ps_freeze, st_freeze)
+# ps_freeze, st_freeze = load(filename, "ps_freeze", "st_freeze");
 unet = (x, t, y) -> first(model((x, t, y), ps_freeze, Lux.testmode(st_freeze)))
 
 
@@ -315,37 +336,123 @@ noise_type = "brownian"
 sigma_brown = 1.0
 
 
-# Method 1: Direct prediction of u(t_{n+1}) - u(t_n)
+# Method 1: Direct prediction of u(t_{n+1})
 # Plot one prediction
+nt = 20
+data_test = create_data(;
+    grid = grid_dns,
+    params,
+    nsample = 1,
+    ntime = nt+1,
+    nsubstep = 10,
+    dt = 1e-3,
+    rng = Xoshiro(4),
+    );
+
 let
     isample = 1
     itime = 1
-    y, z = data_test
-    y = reshape(y[:, itime, isample], :, 1, 1) |> f32 |> device
-    z = reshape(z[:, itime, isample], :, 1, 1) |> f32 |> device
-
+    y_data, z_data = data_test
+    y = reshape(filter_u(y_data[:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02), :, 1, 1) |> f32 |> device
+    z = reshape(filter_u(y_data[:, nt+1, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02), :, 1, 1) |> f32 |> device
     nsubstep = 10
 
-    x = model_eval(unet, y, noise_type , a, b, nsubstep, sigma, sigma_brown, true, device)
+    x = copy(y)
+    for i = 1:nt
+        x = model_eval(unet, x, noise_type , a, b, nsubstep, sigma, sigma_brown, false, device)
+    end
 
     fig = Figure()
     ax = Axis(fig[1, 1])
     input = y[:] |> cpu_device()
     target = z[:] |> cpu_device()
     prediction = x[:] |> cpu_device()
-    lines!(ax, points(grid), input + target; label = "Target")
-    lines!(ax, points(grid), input + prediction; label = "Prediction")
+    lines!(ax, points(grid), target; label = "Target")
+    lines!(ax, points(grid), prediction; label = "Prediction")
     axislegend(ax)
-    save("$outdir/prediction.pdf", fig; backend = CairoMakie)
-    fig
+    # save("$outdir/prediction.pdf", fig; backend = CairoMakie)
+    display(fig)
+
+    k, s = spectrum(target, grid_les)
+    kbar, sbar = spectrum(prediction, grid_les)
+    fig = Figure()
+    ax = Axis(fig[1, 1];
+        xlabel="k",
+        ylabel="S(k)",
+        xscale=log10,
+        yscale=log10,
+        title = "Energy spectrum of u at final time",
+    )
+    lines!(ax, k, s; label = "Energy true")
+    lines!(ax, kbar, sbar; label = "Energy prediction")
+    # ylims!(ax, 1e-16, 1e+1)
+    axislegend(ax; position = :lb)
+    # save("spectrum_cutoff.png", fig)
+    # ylims!(ax, 1e-10, 1e+1)
+    display(fig)
+
 end
+
+let
+    itime = 1
+    y_data, z_data = data_test
+    z = reshape(filter_u(y_data[:, 20+1, 1], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02), :, 1, 1) |> f32 |> device
+    k, s = spectrum(z, grid_les)
+    s_fdns_avg = similar(s)
+    s_fm_avg = similar(s)
+    for isample = 1:100
+        y = reshape(filter_u(y_data[:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02), :, 1, 1) |> f32 |> device
+        z = reshape(filter_u(y_data[:, 20+1, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02), :, 1, 1) |> f32 |> device
+        k, s = spectrum(z, grid_les)
+        s_fdns_avg = similar(s)
+        s_fm_avg = similar(s)
+
+        nsubstep = 10
+
+        x = copy(y)
+        for i = 1:20
+            x = model_eval(unet, x, noise_type , a, b, nsubstep, sigma, sigma_brown, false, device)
+        end
+
+        input = y[:] |> cpu_device()
+        target = z[:] |> cpu_device()
+        prediction = x[:] |> cpu_device()
+
+        k, s_fdns = spectrum(target, grid_les)
+        k, s_fm = spectrum(prediction, grid_les)
+        s_fdns_avg .+= s_fdns
+        s_fm_avg .+= s_fm
+
+    end
+    s_fdns_avg ./= 100
+    s_fm_avg ./= 100
+    fig = Figure()
+    ax = Axis(fig[1, 1];
+        xlabel="k",
+        ylabel="S(k)",
+        xscale=log10,
+        yscale=log10,
+        title = "Energy spectrum of u at final time averaged over 100 simulations",
+    )
+    lines!(ax, k, s_fdns_avg; label = "Energy true")
+    lines!(ax, k, s_fm_avg; label = "Energy prediction")
+    ylims!(ax, 1e-16, 1e+1)
+    axislegend(ax; position = :lb)
+    # save("spectrum_cutoff.png", fig)
+    # ylims!(ax, 1e-10, 1e+1)
+    display(fig)
+end
+
+
+
+
 
 
 # Plug FM model back into physical time stepping loop
 let
     isample = 1
     inputs, _ = data_test
-    ntime = 15
+    ntime = 10
     y = reshape(inputs[:, 1, isample], :, 1, 1) |> f32 |> device
     nsubstep = 10
     for itime = 1:ntime # Physical time stepping
@@ -371,7 +478,7 @@ end
 # Plot one prediction
 let
     isample = 1
-    itime = 10
+    itime = 1
     y, z = data
     y = reshape(y[:, itime, isample], :, 1, 1) |> f32 |> device
     z = reshape(z[:, itime, isample], :, 1, 1) |> f32 |> device
@@ -384,9 +491,9 @@ let
     input_next_mat = sim_data(; u = input, 
         grid = grid_les, 
         params, 
-        nsubstep = 1000, 
-        ntime = 2, 
-        dt = 1e-5)
+        nsubstep = 1, 
+        ntime = 20, 
+        dt = 10*1e-3)
     input_next = input_next_mat[:,2]
     target = z[:] |> cpu_device()
     prediction = x[:] |> cpu_device()
@@ -446,48 +553,210 @@ end
 
 # Method 3: Continuous closure term \overline{F(u(t_n))} - F(\overline{u(t_n)})
 # Plot one prediction
+nt = 200
+Int(200.0)
+t0 = time_ns()
 data_test = create_data(;
     grid = grid_dns,
     params,
     nsample = 1,
-    ntime = 2,
-    nsubstep = 50,
-    dt = 1e-4,
+    ntime = nt+1,
+    nsubstep = 1,
+    dt = 1e-3,
     rng = Xoshiro(1),
     );
+t1 = time_ns()
+elapsed = (t1 - t0) / 1e9
+println("Elapsed time: $elapsed seconds")
+data_test[1][:,1,1]'
 let
+    factor = 10
+    nt_fm = Int(nt/factor)
     isample = 1
     itime = 1
-    y = filter_u(data_test[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.000001)
+    y = filter_u(data_test[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
     y = reshape(y, :, 1, 1) |> f32 |> device
-    target = filter_u(data_test[1][:, end, isample], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.000001)
+    target = filter_u(data_test[1][:, end, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
 
-    nsubstep_pseudo = 10
+    nsubstep_pseudo = 1
     
     input = y[:] |> cpu_device()
     input_copy = copy(input)
+    t0 = time_ns()
     input_next_mat = sim_data_con(; u = input_copy, 
         grid = grid_les,
         params,
         nsubstep = 1, 
-        ntime = 2, 
-        dt = 5e-3,
+        ntime = nt_fm+1, 
+        dt = factor*1e-3 ,
         model = unet, noise_type, a, b, nsubstep_pseudo, sigma, sigma_brown, device)
+    t1 = time_ns()
+    elapsed = (t1 - t0) / 1e9
+    println("Elapsed time: $elapsed seconds")
     input_next = input_next_mat[:,end]
     print(norm(input_next - target)/norm(target))
     energy_target = sum(abs2, target)/(2*grid_les.n)
     energy_next = sum(abs2, input_next)/(2*grid_les.n)
     print("Energy target: $energy_target, energy prediction: $energy_next")
     # prediction = x[:] |> cpu_device()
+
     fig = Figure()
     ax = Axis(fig[1, 1])
     # lines!(ax, points(grid), input; label = "Input")
-    lines!(ax, points(grid), target; label = "True target")
-    lines!(ax, points(grid), input_next; label = "Prediction")
+    lines!(ax, points(grid_les), target; label = "True target")
+    lines!(ax, points(grid_les), input_next; label = "Prediction")
     axislegend(ax)
-    save("$outdir/prediction.pdf", fig; backend = CairoMakie)
-    fig
+    ylims!(ax, -3, 3)
+    # save("$outdir/prediction.pdf", fig; backend = CairoMakie)
+    display(fig)
+
+    k, s = spectrum(target, grid_les)
+    kbar, sbar = spectrum(input_next, grid_les)
+    s = max.(s, 1e-14)
+    fig = Figure()
+    ax = Axis(fig[1, 1];
+        xlabel="k",
+        ylabel="S(k)",
+        xscale=log10,
+        yscale=log10,
+        title = "Energy spectrum of u₀ and filtered u₀ at t=0.0 ",
+    )
+    lines!(ax, k, s; label = "Energy u₀")
+    lines!(ax, kbar, sbar; label = "Energy filtered u₀")
+    lines!(ax, k, k -> 100k^-2; label = "k^-2")
+    ylims!(ax, 1e-16, 1e+1)
+    axislegend(ax; position = :lb)
+    # save("spectrum_cutoff.png", fig)
+    # ylims!(ax, 1e-10, 1e+1)
+    display(fig)
+
+    norm_fm = zeros(nt_fm+1)
+    for t = 0:nt_fm
+        snap_filt = filter_u(data_test[1][:, factor*t+1, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
+        norm_fm[t+1] = norm(input_next_mat[:,t+1] - snap_filt) / norm(snap_filt)
+    end
+    fig = Figure()
+    ax = Axis(fig[1, 1];
+        xlabel="t",
+        ylabel="Relative error",
+        title = "Relative error with filtered DNS",
+    )
+    lines!(range(0.0, 0.2, step=factor*1e-3), norm_fm; label = "Flow Matching")
+    axislegend(ax; position = :lt)
+    display(fig)
 end
+
+
+
+# Average over 100 simulations of FM
+data_test = create_data(;
+    grid = grid_dns,
+    params,
+    nsample = 100,
+    ntime = nt+1,
+    nsubstep = 1,
+    dt = 1e-3,
+    rng = Xoshiro(1),
+    );
+factor = 10
+nt_fm = Int(nt/factor)
+norm_fm_avg = zeros(nt_fm+1)
+s_fdns_avg = zeros(Int(grid_les.n/2))
+s_fm_avg = zeros(Int(grid_les.n/2))
+s_fdns_avg_avg = zeros(Int(grid_les.n/2))
+s_fm_avg_avg = zeros(Int(grid_les.n/2))
+for isample = 1:100
+    itime = 1
+    y = filter_u(data_test[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
+    y = reshape(y, :, 1, 1) |> f32 |> device
+    target = filter_u(data_test[1][:, end, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
+
+    nsubstep_pseudo = 1
+    
+    input = y[:] |> cpu_device()
+    input_copy = copy(input)
+    
+    input_next_mat = sim_data_con(; u = input_copy, 
+        grid = grid_les,
+        params,
+        nsubstep = 1, 
+        ntime = nt_fm+1, 
+        dt = factor*1e-3 ,
+        model = unet, noise_type, a, b, nsubstep_pseudo, sigma, sigma_brown, device)
+    
+    
+    k, s = spectrum(target, grid_les)
+
+    norm_fm = zeros(nt_fm+1)
+    for t = 0:nt_fm
+        snap_filt = filter_u(data_test[1][:, factor*t+1, isample], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02)
+        norm_fm[t+1] = norm(input_next_mat[:,t+1] - snap_filt) / norm(snap_filt)
+        s_fdns = 0
+        s_fm = 0
+        k, s_fdns_sum = spectrum(snap_filt, grid_les)
+        k, s_fm_sum = spectrum(input_next_mat[:,t+1], grid_les)
+        # print(size(s_fdns_sum))
+        s_fdns_avg_avg .+= s_fdns_sum
+        s_fm_avg_avg .+= s_fm_sum
+        if t == nt_fm
+            k, s_fdns_avg_sum = spectrum(snap_filt, grid_les)
+            k, s_fm_avg_sum = spectrum(input_next_mat[:,t+1], grid_les)
+            s_fdns_avg .+= s_fdns_avg_sum
+            s_fm_avg .+= s_fm_avg_sum
+        end
+    end
+    norm_fm_avg .+= norm_fm 
+end
+norm_fm_avg ./= 100
+s_fdns_avg ./= 100
+s_fm_avg ./= 100
+s_fdns_avg_avg ./= 100*(nt_fm+1)
+s_fm_avg_avg ./= 100*(nt_fm+1)
+s_fdns_avg
+k, _ = spectrum(filter_u(data_test[1][:, end, 1], grid_dns.l, grid_dns.n, grid_les.n, "gaussian", 0.02), grid_les)
+
+fig = Figure()
+    ax = Axis(fig[1, 1];
+        xlabel="k",
+        ylabel="S(k)",
+        xscale=log10,
+        yscale=log10,
+        title = "Energy spectrum at final time T=",
+    )
+    lines!(ax, k, s_fdns_avg; label = "Filtered DNS")
+    lines!(ax, k, s_fm_avg; label = "Flow Matching")
+    # ylims!(ax, 1e-16, 1e+1)
+    axislegend(ax; position = :lb)
+    save("Burgers_spectrum_FMcon_avg.pdf", fig)
+    # ylims!(ax, 1e-10, 1e+1)
+display(fig)
+
+fig = Figure()
+    ax = Axis(fig[1, 1];
+        xlabel="k",
+        ylabel="S(k)",
+        xscale=log10,
+        yscale=log10,
+        title = "Energy spectrum averaged over time",
+    )
+    lines!(ax, k, s_fdns_avg_avg; label = "Filtered DNS")
+    lines!(ax, k, s_fm_avg_avg; label = "Flow Matching")
+    # ylims!(ax, 1e-16, 1e+1)
+    axislegend(ax; position = :lb)
+    save("Burgers_spectrum_FMcon_avg_avg.pdf", fig)
+    # ylims!(ax, 1e-10, 1e+1)
+display(fig)
+
+fig = Figure()
+    ax = Axis(fig[1, 1];
+        xlabel="t",
+        ylabel="Relative error",
+        title = "Relative error with filtered DNS",
+    )
+    lines!(range(0.0, 0.2, step=factor*1e-3), norm_fm_avg; label = "Flow Matching")
+    axislegend(ax; position = :lt)
+    save("Burgers_rel_err_FMcon.pdf", fig)
+display(fig)
 
 
 
@@ -503,7 +772,8 @@ data_test = create_data(;
     dt = 1e-4,
     rng = Xoshiro(1),
     );
-
+k, s = spectrum(data_test[1][:,end,1], grid_dns)
+s'
 isample = 1
 itime = 1
 y = filter_u(data_test[1][:, itime, isample], grid_dns.l, grid_dns.n, grid_les.n, "spectral", 0.000001)

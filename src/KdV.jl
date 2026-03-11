@@ -132,54 +132,54 @@ function reconstruct(u_hat_les, n_dns, n_les)
     u_hat
 end
 
-function g(k, Δ, filter_type, L)
-    if filter_type == "spectral"
-        K_cutoff = div(1/Δ, 2)
-        g_k = zeros(Complex{Float64}, length(k))
-        j = 1
-        for i in k
-            if i <= K_cutoff
-                g_k[j] = 1.0
-            end
-            j += 1
-        end
-    elseif filter_type == "gaussian"
-        g_k = exp.( -π^2 * (k/L).^2 * Δ^2 / 6)
-    elseif filter_type == "top_hat"
-        g_k = zeros(Complex{Float64}, length(k))
-        j = 1
-        for i in k
-            if i == 0
-                g_k[j] = 1.0
-            else
-                g_k[j] = sin(π * (i / L) * Δ) / (π * (i/ L) * Δ)
-            end
-        j += 1
-        end
-    end   
-    g_k 
-end
+# function g(k, Δ, filter_type, L)
+#     if filter_type == "spectral"
+#         K_cutoff = div(1/Δ, 2)
+#         g_k = zeros(Complex{Float64}, length(k))
+#         j = 1
+#         for i in k
+#             if i <= K_cutoff
+#                 g_k[j] = 1.0
+#             end
+#             j += 1
+#         end
+#     elseif filter_type == "gaussian"
+#         g_k = exp.( -π^2 * (k/L).^2 * Δ^2 / 6)
+#     elseif filter_type == "top_hat"
+#         g_k = zeros(Complex{Float64}, length(k))
+#         j = 1
+#         for i in k
+#             if i == 0
+#                 g_k[j] = 1.0
+#             else
+#                 g_k[j] = sin(π * (i / L) * Δ) / (π * (i/ L) * Δ)
+#             end
+#         j += 1
+#         end
+#     end   
+#     g_k 
+# end
 
 
-function filter(u, L, n_dns, n_les, filter_type, Δ = 0.01)
-    K_dns = div(n_dns, 2)
-    k = 0:K_dns
-    u_hat = rfft(u)
-    u_bar_hat = g(k, Δ, filter_type, L) .* u_hat
-    u_bar_dns = irfft(u_bar_hat, n_dns)
-    u_bar = spectral_cutoff(u_bar_dns, n_dns, n_les)
-    u_bar
-end   
+# function filter(u, L, n_dns, n_les, filter_type, Δ = 0.01)
+#     K_dns = div(n_dns, 2)
+#     k = 0:K_dns
+#     u_hat = rfft(u)
+#     u_bar_hat = g(k, Δ, filter_type, L) .* u_hat
+#     u_bar_dns = irfft(u_bar_hat, n_dns)
+#     u_bar = spectral_cutoff(u_bar_dns, n_dns, n_les)
+#     u_bar
+# end   
 
-function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.01)
-    K_dns = div(n_dns, 2)
-    k = 0:K_dns
-    u_hat = rfft(u)
-    u_bar_hat = g(k, Δ, filter_type, L) .* u_hat
-    u_bar_dns = irfft(u_bar_hat, n_dns)
-    u_bar = spectral_cutoff(u_bar_dns, n_dns, n_les)
-    u_bar
-end  
+# function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.01)
+#     K_dns = div(n_dns, 2)
+#     k = 0:K_dns
+#     u_hat = rfft(u)
+#     u_bar_hat = g(k, Δ, filter_type, L) .* u_hat
+#     u_bar_dns = irfft(u_bar_hat, n_dns)
+#     u_bar = spectral_cutoff(u_bar_dns, n_dns, n_les)
+#     u_bar
+# end  
 
 
 

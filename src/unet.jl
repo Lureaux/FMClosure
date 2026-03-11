@@ -217,6 +217,7 @@ function brownian_periodic(z, sigma)
     colons = ntuple(Returns(:), length(s))
     u = randn(T, nx + 1, s...)
     u = cumsum(u; dims=1) 
+    u .-= u[1]
     u .*= sigma/sqrt(T(nx))
     x = range(T(0), T(1), nx + 1)
     l = @. x * u[end:end, colons...] + (1-x) * u[1:1, colons...]
@@ -319,15 +320,15 @@ apply!(f, g::Grid, args) =
     end
 
 
-"Korteweg-de Vries equation right hand side."
-@inline function force!(f, u, g::Grid, _, i)
-    h = dx(g)
-    a = (u[i] + u[i-1|>g])^2 / 4
-    b = (u[i+1|>g] + u[i])^2 / 4
-    # b = u[i+1|>g]^2 / 2
-    # a = u[i-1|>g]^2 / 2
-    f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
-end
+# "Korteweg-de Vries equation right hand side."
+# @inline function force!(f, u, g::Grid, _, i)
+#     h = dx(g)
+#     a = (u[i] + u[i-1|>g])^2 / 4
+#     b = (u[i+1|>g] + u[i])^2 / 4
+#     # b = u[i+1|>g]^2 / 2
+#     # a = u[i-1|>g]^2 / 2
+#     f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
+# end
 
 function rk4_con!(u, cache, grid, visc, dt, model, noise_type, a, b, nsubstep, sigma, sigma_brown, device)
     info_i = false

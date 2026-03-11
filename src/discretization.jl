@@ -24,30 +24,36 @@ apply!(f, g::Grid, args) =
     end
 
 # "Burgers equation right hand side."
-# @inline function force!(f, u, g::Grid, (; visc), i)
-#     h = dx(g)
-#     a = -(u[i] + u[i-1|>g])^2 / 8 + visc * (u[i] - u[i-1|>g]) / h
-#     b = -(u[i+1|>g] + u[i])^2 / 8 + visc * (u[i+1|>g] - u[i]) / h
-#     f[i] = (b - a) / h
-# end
-
-"Korteweg-de Vries equation right hand side."
-@inline function force!(f, u, g::Grid, _, i)
+@inline function force!(f, u, g::Grid, (; visc), i)
     h = dx(g)
-    a = (u[i] + u[i-1|>g])^2 / 4
-    b = (u[i+1|>g] + u[i])^2 / 4
-    # b = u[i+1|>g]^2 / 2
-    # a = u[i-1|>g]^2 / 2
-    f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
+
+    g_i = (u[i]^2 + u[i] * u[i+1|>g] + u[i+1|>g]^2) / 6
+    g_imin1 = (u[i-1|>g]^2 + u[i-1|>g] * u[i] + u[i]^2) / 6
+    conv = (g_i - g_imin1) / h
+    diff = visc * (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
+    f[i] = -conv + diff
 end
 
+
+
+# "Korteweg-de Vries equation right hand side."
+# @inline function force!(f, u, g::Grid, _, i)
+#     h = dx(g)
+#     a = (u[i] + u[i-1|>g])^2 / 4
+#     b = (u[i+1|>g] + u[i])^2 / 4
+#     # b = u[i+1|>g]^2 / 2
+#     # a = u[i-1|>g]^2 / 2
+#     f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
+# end
+
 function closureterm(u, g_dns::Grid, g_les::Grid)
+    visc=0.005
     f = zero(u)
-    apply!(force!, g_dns, (f, u, g_dns, nothing))
-    ubar = filter_u(u, g_dns.l, g_dns.n, g_les.n, "spectral", 0.000001)
-    fbar1 = filter_u(f, g_dns.l, g_dns.n, g_les.n, "spectral", 0.000001)
+    apply!(force!, g_dns, (f, u, g_dns, (; visc)))
+    ubar = filter_u(u, g_dns.l, g_dns.n, g_les.n, "gaussian", 0.02)
+    fbar1 = filter_u(f, g_dns.l, g_dns.n, g_les.n, "gaussian", 0.02)
     fbar2 = zero(fbar1)
-    apply!(force!, g_les, (fbar2, ubar, g_les, nothing))
+    apply!(force!, g_les, (fbar2, ubar, g_les, (; visc)))
     c = fbar1 - fbar2
     c
 end
@@ -85,12 +91,23 @@ end
 
 propose_timestep(u, g::Grid, visc) = min(dx(g) / maximum(abs, u), dx(g)^2 / visc)
 
-function randomfield(g::Grid, kpeak, rng)
-    amp = sqrt(4 / kpeak / 3 / sqrt(π))
-    k = 0:div(g.n, 2)
-    c = @. amp * (k / kpeak)^2 * exp(-(k / kpeak)^2 / 2 + 2π * im * rand(rng))
-    irfft(c * g.n, g.n)
+# function randomfield(g::Grid, kpeak, rng)
+#     amp = sqrt(4 / kpeak / 3 / sqrt(π))
+#     k = 0:div(g.n, 2)
+#     c = @. amp * (k / kpeak)^2 * exp(-(k / kpeak)^2 / 2 + 2π * im * rand(rng))
+#     irfft(c * g.n, g.n)
+# end
+
+function randomfield(g::Grid, kpeak, total_energy, rng)
+    K = div(g.n, 2)
+    k = 0:K
+    c = @. k^4 * exp(-2(k / kpeak)^2 + 2π * im * rand(rng))
+    a = irfft(c, g.n)
+    Δx = 2*π / g.n
+    u₀ = a * sqrt(2*total_energy / sum(abs2, a) / Δx)
+    u₀
 end
+
 
 function create_data(; grid, params, nsample, nsubstep, ntime, dt, rng)
     inputs = zeros(grid.n, ntime, nsample)
@@ -99,7 +116,7 @@ function create_data(; grid, params, nsample, nsubstep, ntime, dt, rng)
     # f!(du, u) = apply!(force!, grid, (du, u, grid, params))
     for isample = 1:nsample
         @show isample
-        u = randomfield(grid, 10.0, rng)
+        u = randomfield(grid, 10.0, 10.0, rng)
         cache = similar(u), similar(u), similar(u), similar(u), similar(u)
         for itime = 1:ntime
             # @show (isample, itime)
@@ -115,6 +132,8 @@ function create_data(; grid, params, nsample, nsubstep, ntime, dt, rng)
     @. outputs -= inputs # Let the difference be the target
     inputs, outputs
 end
+
+
 
 function cutoff(u_hat, n_dns, n_les)
     u_bar_hat = u_hat[1:div(n_les, 2)+1].*n_les./n_dns
@@ -141,7 +160,7 @@ function g(k, Δ, filter_type, L)
             j += 1
         end
     elseif filter_type == "gaussian"
-        g_k = exp.( -π^2 * (k/L).^2 * Δ^2 / 6)
+        g_k = exp.( -π^2 * (k).^2 * Δ^2 / 6)
     elseif filter_type == "top_hat"
         g_k = zeros(Complex{Float64}, length(k))
         j = 1
@@ -157,7 +176,7 @@ function g(k, Δ, filter_type, L)
     g_k 
 end
 
-function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.000001)
+function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.02)
     K_dns = div(n_dns, 2)
     k = 0:K_dns
     u_hat = rfft(u)
@@ -167,10 +186,20 @@ function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.000001)
     u_bar
 end  
 
+function spectrum(u, grid)
+    uhat = rfft(u)[2:end]
+    n = grid.n
+    k = rfftfreq(n) * n
+    k = k[2:end]
+    s = abs2.(uhat) / 2n^2
+    k, s
+end
+
 function create_data_dns(; grid_dns, grid_les, params, nsample, nsubstep, ntime, dt, rng)
     n_dns = grid_dns.n
     n_les = grid_les.n
     L = grid_dns.l
+    dt_les = nsubstep * dt
     
     inputs = zeros(n_dns, ntime, nsample)
     inputs_les = zeros(n_les, ntime, nsample)
@@ -179,22 +208,24 @@ function create_data_dns(; grid_dns, grid_les, params, nsample, nsubstep, ntime,
     adaptive = isnothing(dt)
     for isample = 1:nsample
         @show isample
-        u_dns = randomfield(grid_dns, 10.0, rng)
-        u_les = filter_u(u_dns, L, n_dns, n_les, "spectral")
+        u_dns = randomfield(grid_dns, 10.0, 10.0, rng)
+        u_les = filter_u(u_dns, L, n_dns, n_les, "gaussian")
         cache_dns = similar(u_dns), similar(u_dns), similar(u_dns), similar(u_dns), similar(u_dns)
         cache_les = similar(u_les), similar(u_les), similar(u_les), similar(u_les), similar(u_les)
         for itime = 1:ntime
             # @show (isample, itime)
             inputs[:, itime, isample] = u_dns
             inputs_les[:, itime, isample] = u_les
-            u_dns_bar_new = filter_u(u_dns, L, n_dns, n_les, "spectral")
+            u_dns_bar_new = filter_u(u_dns, L, n_dns, n_les, "gaussian")
             for isubstep = 1:nsubstep
                 # forward_euler!(u, cache, grid, params, dt)
                 rk4!(u_dns, cache_dns, grid_dns, params, dt) 
-                rk4!(u_les, cache_les, grid_les, params, dt)
-                rk4!(u_dns_bar_new, cache_les, grid_les, params, dt)
+                # rk4!(u_les, cache_les, grid_les, params, dt)
+                # rk4!(u_dns_bar_new, cache_les, grid_les, params, dt)
             end
-            u_dns_bar = filter_u(u_dns, L, n_dns, n_les, "spectral")
+            rk4!(u_les, cache_les, grid_les, params, dt_les)
+            rk4!(u_dns_bar_new, cache_les, grid_les, params, dt_les)
+            u_dns_bar = filter_u(u_dns, L, n_dns, n_les, "gaussian")
             diff = u_dns_bar - u_les
             diff_new = u_dns_bar - u_dns_bar_new
             outputs[:, itime, isample] = diff
@@ -223,6 +254,7 @@ end
 
 
 function create_data_con(; grid_dns, grid_les, params, nsample, nsubstep, ntime, dt, rng)
+    # First entry of u_bars is initial condition
     n_dns = grid_dns.n
     n_les = grid_les.n
     L = grid_dns.l
@@ -233,11 +265,11 @@ function create_data_con(; grid_dns, grid_les, params, nsample, nsubstep, ntime,
 
     for isample = 1:nsample
         @show isample
-        u = randomfield(grid_dns, 10.0, rng)
+        u = randomfield(grid_dns, 10.0, 10.0, rng)
         cache = similar(u), similar(u), similar(u), similar(u), similar(u) # v, k1, k2, k3, k4
         for itime = 1:ntime
             # @show (isample, itime)
-            u_bar = filter_u(u, L, n_dns, n_les, "spectral", 0.000001)
+            u_bar = filter_u(u, L, n_dns, n_les, "gaussian", 0.02)
             u_bars[:, itime, isample] = u_bar
             closure = closureterm(u, grid_dns, grid_les)
             closures[:, itime, isample] = closure
