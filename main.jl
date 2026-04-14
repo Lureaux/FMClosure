@@ -295,7 +295,7 @@ data = (data_dns_bar, closures)
 using JLD2
 ic_type = "brownian"
 # filename = "myparameters_linear_batchnorm_cont_brownian.jld2"
-filename = "myparameters_kdv_cont_brownian_10epoch.jld2"
+filename = "parameters/kdv_cont_brownian_10epoch.jld2"
 # jldsave(filename; ps_freeze, st_freeze)
 ps_freeze, st_freeze = load(filename, "ps_freeze", "st_freeze");
 unet = (x, t, y) -> first(model((x, t, y), ps_freeze, Lux.testmode(st_freeze)))

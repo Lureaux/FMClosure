@@ -629,7 +629,7 @@ model = UNet(;
     y_embed_dim = 8,
     device,
 )
-ps_freeze, st_freeze = load("myparameters_KS_cont25_m2brownian.jld2", "ps_freeze", "st_freeze");
+ps_freeze, st_freeze = load("parameters/KS_cont25_m2brownian.jld2", "ps_freeze", "st_freeze");
 unet = (x, t, y) -> first(model((x, t, y), ps_freeze, Lux.testmode(st_freeze)))
 
 model_disc = UNet(;
@@ -640,7 +640,7 @@ model_disc = UNet(;
     y_embed_dim = 8,
     device,
 )
-ps_freeze_disc, st_freeze_disc = load("myparameters_KS_disc20_m2gaussian.jld2", "ps_freeze", "st_freeze");
+ps_freeze_disc, st_freeze_disc = load("parameters/KS_disc20_m2gaussian.jld2", "ps_freeze", "st_freeze");
 unet_disc = (x, t, y) -> first(model_disc((x, t, y), ps_freeze_disc, Lux.testmode(st_freeze_disc)))
 
 model_discdiff = UNet(;
@@ -651,7 +651,7 @@ model_discdiff = UNet(;
     y_embed_dim = 8,
     device,
 )
-ps_freeze_discdiff, st_freeze_discdiff = load("myparameters_KS_discdiff20_m2brownian.jld2", "ps_freeze", "st_freeze");
+ps_freeze_discdiff, st_freeze_discdiff = load("parameters/KS_discdiff20_m2brownian.jld2", "ps_freeze", "st_freeze");
 unet_discdiff = (x, t, y) -> first(model_discdiff((x, t, y), ps_freeze_discdiff, Lux.testmode(st_freeze_discdiff)))
 
 

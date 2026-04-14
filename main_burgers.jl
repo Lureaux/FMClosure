@@ -316,7 +316,7 @@ ps_freeze, st_freeze = train(;
 using JLD2
 ic_type = "brownian"
 # filename = "myparameters_linear_batchnorm_cont_brownian.jld2"
-filename = "myparameters_burgers_discsmall70_brownian.jld2"
+filename = "parameters/burgers_discsmall70_brownian.jld2"
 # jldsave(filename; ps_freeze, st_freeze)
 # ps_freeze, st_freeze = load(filename, "ps_freeze", "st_freeze");
 unet = (x, t, y) -> first(model((x, t, y), ps_freeze, Lux.testmode(st_freeze)))
@@ -582,6 +582,10 @@ let
     
     input = y[:] |> cpu_device()
     input_copy = copy(input)
+    input_copy_disc = copy(input)
+    input_copy_discdiff = copy(input)
+
+    time_fmcon = 0.0
     t0 = time_ns()
     input_next_mat = sim_data_con(; u = input_copy, 
         grid = grid_les,
@@ -658,7 +662,7 @@ model = UNet(;
     y_embed_dim = 32,
     device,
 )
-ps_freeze, st_freeze = load("myparameters_burgers_cont_brownian.jld2", "ps_freeze", "st_freeze");
+ps_freeze, st_freeze = load("parameters/burgers_cont_brownian.jld2", "ps_freeze", "st_freeze");
 unet = (x, t, y) -> first(model((x, t, y), ps_freeze, Lux.testmode(st_freeze)))
 
 model_disc = UNet(;
@@ -669,7 +673,7 @@ model_disc = UNet(;
     y_embed_dim = 16,
     device,
 )
-ps_freeze_disc, st_freeze_disc = load("myparameters_burgers_discsmall50_brownian.jld2", "ps_freeze", "st_freeze");
+ps_freeze_disc, st_freeze_disc = load("parameters/burgers_discsmall50_brownian.jld2", "ps_freeze", "st_freeze");
 unet_disc = (x, t, y) -> first(model_disc((x, t, y), ps_freeze_disc, Lux.testmode(st_freeze_disc)))
 
 model_discdiff = UNet(;
@@ -680,7 +684,7 @@ model_discdiff = UNet(;
     y_embed_dim = 16,
     device,
 )
-ps_freeze_discdiff, st_freeze_discdiff = load("myparameters_burgers_discdiffsmall50_brownian.jld2", "ps_freeze", "st_freeze");
+ps_freeze_discdiff, st_freeze_discdiff = load("parameters/burgers_discdiffsmall50_brownian.jld2", "ps_freeze", "st_freeze");
 unet_discdiff = (x, t, y) -> first(model_discdiff((x, t, y), ps_freeze_discdiff, Lux.testmode(st_freeze_discdiff)))
 
 
