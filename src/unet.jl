@@ -211,6 +211,7 @@ function create_dataloader(grid, data, batchsize, rng)
     DataLoader((y, z); batchsize, shuffle = true, partial = false, rng)
 end
 
+"Create periodic brownian bridge noise."
 function brownian_periodic(z, sigma)
     T = eltype(z)
     nx, s... = size(z)
@@ -228,6 +229,7 @@ function brownian_periodic(z, sigma)
     v
 end
 
+"Solve flow matching ODE/SDE with pseudo-time stepping and return the final state at pseudo-time 1."
 function pseudo_timestepping(model, nsubstep, x, t, y, a, b, adot, bdot, sigma, info_i)
     h = 1.0f0 / nsubstep
     xfull = zeros(length(x), nsubstep+1)
@@ -246,6 +248,7 @@ function pseudo_timestepping(model, nsubstep, x, t, y, a, b, adot, bdot, sigma, 
     x, t
 end
 
+"Evaluate the flow matching model with pseudo-time stepping. The initial state is sampled from Gaussian or Brownian noise, and the final state at pseudo-time 1 is returned."
 function model_eval(model, y, noise_type, a, b, nsubstep, sigma, sigma_brown, info_i, device)
     adot(t) = ForwardDiff.derivative(a, t)
     bdot(t) = ForwardDiff.derivative(b, t)
@@ -334,6 +337,7 @@ apply!(f, g::Grid, args) =
 #     f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
 # end
 
+"RK4 step adding the physical force function and the learned flow-matching model."
 function rk4_con!(u, cache, grid, visc, dt, model, noise_type, a, b, nsubstep, sigma, sigma_brown, device)
     info_i = false
     v, k1, k2, k3, k4 = cache
@@ -351,6 +355,7 @@ function rk4_con!(u, cache, grid, visc, dt, model, noise_type, a, b, nsubstep, s
     @. u += dt * (k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6)
 end
 
+"Given initial condition `u`, simulate `nsample` trajectories using the flow matching model as closure model with `nsubstep * (ntime-1)` time steps with time step 'dt' and return the trajectories. First element is the initial condition."
 function sim_data_con(; u, grid, params, nsubstep, ntime, dt, model, noise_type, a, b, nsubstep_pseudo, sigma, sigma_brown, device)
     outputs = zeros(grid.n, ntime)
     adaptive = isnothing(dt)

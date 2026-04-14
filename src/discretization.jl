@@ -125,6 +125,10 @@ function randomfield(g::Grid, kpeak, total_energy, rng)
 end
 
 
+"Create data by simulating `nsample` trajectories with `nsubstep * ntime` time steps with time step 'dt'.
+Inputs: `u(t)`
+Outputs: `u(t + nsubstep * dt) - u(t)`
+" 
 function create_data(; grid, params, nsample, nsubstep, ntime, dt, rng)
     inputs = zeros(grid.n, ntime, nsample)
     outputs = similar(inputs)
@@ -214,6 +218,13 @@ function spectrum(u, grid)
     k, s
 end
 
+"Create data by simulating `nsample` trajectories with `nsubstep * ntime` time steps with time step 'dt'.
+
+inputs: `u_dns(t)`
+outputs: `u_dns_bar(t + nsubstep * dt) - u_les(t + nsubstep * dt)`
+inputs_les: `u_les(t)`
+outputs_new: `u_dns_bar(t + nsubstep * dt) - u_dns_bar(t)`
+"
 function create_data_dns(; grid_dns, grid_les, params, nsample, nsubstep, ntime, dt, rng)
     n_dns = grid_dns.n
     n_les = grid_les.n
@@ -255,6 +266,7 @@ function create_data_dns(; grid_dns, grid_les, params, nsample, nsubstep, ntime,
     inputs, outputs, inputs_les, outputs_new
 end
 
+"Simulate `nsample` trajectories with `nsubstep * (ntime-1)` time steps with time step 'dt' and return the trajectories."
 function sim_data(; u, grid, params, nsubstep, ntime, dt)
     outputs = zeros(grid.n, ntime)
     adaptive = isnothing(dt)
@@ -271,7 +283,11 @@ function sim_data(; u, grid, params, nsubstep, ntime, dt)
     outputs
 end
 
+"Create data by simulating `nsample` trajectories with `nsubstep * ntime` time steps with time step 'dt'.
 
+`u_bars`: filtered `u` on LES grid at each time step.
+`closures`: closure term `bar{F(u)} - F(bar{u})` at each time step.
+"
 function create_data_con(; grid_dns, grid_les, params, nsample, nsubstep, ntime, dt, rng)
     # First entry of u_bars is initial condition
     n_dns = grid_dns.n

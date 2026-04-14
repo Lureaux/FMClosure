@@ -34,11 +34,7 @@ The repository includes several main scripts for running experiments:
 - `main_burgers.jl`: Run simulations for Burgers' equation.
 - `main.jl`: General entry point for other experiments.
 
-To execute a script, use the Julia REPL:
-
-```bash
-julia --project=. main_KS.jl
-```
+These scripts are meant to be runned manually. 
 
 ## Data Files
 The repository includes several `.jld2` files for pre-trained parameters and datasets:
