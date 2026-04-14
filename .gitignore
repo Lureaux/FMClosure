@@ -7,4 +7,5 @@
 *.out
 .gitattributes
 output/
+old_files/
 *.jld2

@@ -24,7 +24,6 @@ using JLD2
 using FMClosure
 
 outdir = joinpath(@__DIR__, "output") |> mkpath
-pardir = joinpath(@__DIR__, "parameters") |> mkpath
 
 # Define a value for the viscosity, but it is not used for KS
 visc = 0.005
@@ -162,8 +161,7 @@ elseif data_type == "closure"
     data_dns[:,:,401:500] = data_closure_5
 end
 
-data_snap_1
-data_closure_1
+
 
 # Create training data    
 if data_type == "snap"

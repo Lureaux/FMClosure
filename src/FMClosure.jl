@@ -10,17 +10,13 @@ using ForwardDiff
 
 include("discretization.jl")
 include("unet.jl")
-include("models.jl")
-# include("KdV.jl")
 
 
-export Grid,
-    points, force!, forward_euler!, rk4!, propose_timestep, randomfield, create_data
-export UNet, create_dataloader, train
-export create_data_dns, sim_data
-export spectral_cutoff, spectrum
-export filter_u, closureterm, pseudo_timestepping, model_eval, sim_data_con
-export brownian_periodic
+
+export Grid, points, force!, forward_euler!, rk4!, randomfield, create_data, create_data_dns, sim_data, filter_u, closureterm, spectral_cutoff, spectrum
+
+export UNet, create_dataloader, train, pseudo_timestepping, model_eval, sim_data_con, brownian_periodic
+ 
 
 
 end # module Burgers
