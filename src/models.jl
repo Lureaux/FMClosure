@@ -1,25 +1,19 @@
-large2(device) = (;
-
+# Burgers' equation model
 model = UNet(;
     nspace = grid.n,
-    channels = [8, 8, 16, 16],
-    nresidual = 4,
-    t_embed_dim = 16,
-    y_embed_dim = 16,
-    device
-),
+    channels = [8, 8],
+    nresidual = 2,
+    t_embed_dim = 32,
+    y_embed_dim = 32,
+    device,
+) # 34,792 parameters
 
-name = "large2",
-
-nsample = 150.,)
-    
-    
-    
-#     smalll() = UNet(;
-#     nspace = grid.n,
-#     channels = [8, 8, 16, 16],
-#     nresidual = 4,
-#     t_embed_dim = 16,
-#     y_embed_dim = 16,
-#     device,
-# )
+# KS equation model
+m2 = UNet(;
+    nspace = grid_les.n,
+    channels = [8, 16, 16, 8],
+    nresidual = 2,
+    t_embed_dim = 8,
+    y_embed_dim = 8,
+    device,
+) # 30,844 parameters
