@@ -24,14 +24,26 @@ apply!(f, g::Grid, args) =
     end
 
 # "Burgers equation right hand side."
+# @inline function force!(f, u, g::Grid, (; visc), i)
+#     h = dx(g)
+
+#     g_i = (u[i]^2 + u[i] * u[i+1|>g] + u[i+1|>g]^2) / 6
+#     g_imin1 = (u[i-1|>g]^2 + u[i-1|>g] * u[i] + u[i]^2) / 6
+#     conv = (g_i - g_imin1) / h
+#     diff = visc * (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
+#     f[i] = -conv + diff
+# end
+
+"KS equation right hand side."
 @inline function force!(f, u, g::Grid, (; visc), i)
     h = dx(g)
 
     g_i = (u[i]^2 + u[i] * u[i+1|>g] + u[i+1|>g]^2) / 6
     g_imin1 = (u[i-1|>g]^2 + u[i-1|>g] * u[i] + u[i]^2) / 6
     conv = (g_i - g_imin1) / h
-    diff = visc * (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
-    f[i] = -conv + diff
+    diff = (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
+    fourth = (u[i+2|>g] - 4 *  u[i+1|>g] + 6 * u[i] - 4 * u[i-1|>g] + u[i-2|>g]) / h^4
+    f[i] = -conv - diff - fourth
 end
 
 
@@ -46,23 +58,26 @@ end
 #     f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
 # end
 
+"Obtain closure term bar{F(u)} - F(bar{u})."
 function closureterm(u, g_dns::Grid, g_les::Grid)
     visc=0.005
     f = zero(u)
     apply!(force!, g_dns, (f, u, g_dns, (; visc)))
-    ubar = filter_u(u, g_dns.l, g_dns.n, g_les.n, "gaussian", 0.02)
-    fbar1 = filter_u(f, g_dns.l, g_dns.n, g_les.n, "gaussian", 0.02)
+    ubar = filter_u(u, g_dns.l, g_dns.n, g_les.n, "gaussian", 0.05)
+    fbar1 = filter_u(f, g_dns.l, g_dns.n, g_les.n, "gaussian", 0.05)
     fbar2 = zero(fbar1)
     apply!(force!, g_les, (fbar2, ubar, g_les, (; visc)))
     c = fbar1 - fbar2
     c
 end
 
+"Forward Euler time stepping."
 function forward_euler!(u, f, grid, visc, dt)
     apply!(force!, grid, (f, u, grid, visc))
     @. u += dt * f
 end
 
+"RK4 time stepping."
 function rk4!(u, cache, grid, visc, dt)
     v, k1, k2, k3, k4 = cache
     apply!(force!, grid, (k1, u, grid, visc))
@@ -89,7 +104,7 @@ end
 #     @. u += dt * (k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6)
 # end
 
-propose_timestep(u, g::Grid, visc) = min(dx(g) / maximum(abs, u), dx(g)^2 / visc)
+# propose_timestep(u, g::Grid, visc) = min(dx(g) / maximum(abs, u), dx(g)^2 / visc)
 
 # function randomfield(g::Grid, kpeak, rng)
 #     amp = sqrt(4 / kpeak / 3 / sqrt(π))
@@ -98,6 +113,7 @@ propose_timestep(u, g::Grid, visc) = min(dx(g) / maximum(abs, u), dx(g)^2 / visc
 #     irfft(c * g.n, g.n)
 # end
 
+"Random initial condition with energy concentrated around `kpeak`."
 function randomfield(g::Grid, kpeak, total_energy, rng)
     K = div(g.n, 2)
     k = 0:K
@@ -134,13 +150,13 @@ function create_data(; grid, params, nsample, nsubstep, ntime, dt, rng)
 end
 
 
-
+"Remove Fourier modes to go from DNS grid to LES grid."
 function cutoff(u_hat, n_dns, n_les)
     u_bar_hat = u_hat[1:div(n_les, 2)+1].*n_les./n_dns
     u_bar_hat
 end
 
-# Filter kernel
+"Spectral cutoff to go from DNS grid to LES grid."
 function spectral_cutoff(u, n_dns, n_les)
     u_hat = rfft(u)
     u_bar_hat = cutoff(u_hat, n_dns, n_les)
@@ -148,6 +164,7 @@ function spectral_cutoff(u, n_dns, n_les)
     u_bar
 end
 
+"Filter kernel for Fourier modes `k` with filter width `Δ` and type `filter_type`."
 function g(k, Δ, filter_type, L)
     if filter_type == "spectral"
         K_cutoff = div(1/Δ, 2)
@@ -176,7 +193,8 @@ function g(k, Δ, filter_type, L)
     g_k 
 end
 
-function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.02)
+"Filter `u` on DNS grid to get `u_bar` on LES grid with domain length `L`, number of points `n_dns` and `n_les`, filter type `filter_type` and filter width `Δ`."
+function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.05)
     K_dns = div(n_dns, 2)
     k = 0:K_dns
     u_hat = rfft(u)
@@ -186,6 +204,7 @@ function filter_u(u, L, n_dns, n_les, filter_type, Δ = 0.02)
     u_bar
 end  
 
+"Obtain the energy spectrum of `u` with corresponding wavenumbers."
 function spectrum(u, grid)
     uhat = rfft(u)[2:end]
     n = grid.n
@@ -269,7 +288,7 @@ function create_data_con(; grid_dns, grid_les, params, nsample, nsubstep, ntime,
         cache = similar(u), similar(u), similar(u), similar(u), similar(u) # v, k1, k2, k3, k4
         for itime = 1:ntime
             # @show (isample, itime)
-            u_bar = filter_u(u, L, n_dns, n_les, "gaussian", 0.02)
+            u_bar = filter_u(u, L, n_dns, n_les, "gaussian", 0.05)
             u_bars[:, itime, isample] = u_bar
             closure = closureterm(u, grid_dns, grid_les)
             closures[:, itime, isample] = closure

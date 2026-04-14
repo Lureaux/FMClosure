@@ -230,6 +230,9 @@ end
 
 function pseudo_timestepping(model, nsubstep, x, t, y, a, b, adot, bdot, sigma, info_i)
     h = 1.0f0 / nsubstep
+    xfull = zeros(length(x), nsubstep+1)
+    xfull[:,1] = x
+    # print(x)
     for isub = 1:nsubstep # Pseudo-time stepping
         if info_i
             @info isub
@@ -237,6 +240,7 @@ function pseudo_timestepping(model, nsubstep, x, t, y, a, b, adot, bdot, sigma, 
         model_u = model(x, t, y)
         score = @. (a(t) .* model_u - adot(t) .* x) ./ (b(t).^2 .* adot(t) - a(t) .* bdot(t) .* b(t))
         x += h * (model_u + score .* sigma(t).^2 /2) + sigma(t) .* sqrt(h) .* randn(size(model_u))
+        xfull[:,isub+1] = x
         @. t += h
     end
     x, t
@@ -280,9 +284,9 @@ function train(; model, rng, nepoch, dataloader, opt, device, a, b, params = not
     for iepoch = 1:nepoch, (ibatch, batch) in enumerate(dataloader)
         y, z = batch |> device
         nsample = size(z, ndims(z))
-        # x0 = randn!(similar(z)) # Gaussian initial conditions
+        x0 = randn!(similar(z)) # Gaussian initial conditions
         T = eltype(z)
-        x0 = brownian_periodic(z, T(1.0)) |> device # Brownian initial conditions
+        # x0 = brownian_periodic(z, T(1.0)) |> device # Brownian initial conditions
         t = rand!(similar(z, 1, 1, nsample)) # Pseudo-times
         x = @. a(t) * z + b(t) * x0 # Linear interpolation
         u = @. adot(t) * z + bdot(t) * x0 # Linear conditional vector field
