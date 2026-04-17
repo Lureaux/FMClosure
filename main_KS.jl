@@ -1,3 +1,5 @@
+# IMPORTANT: In the discretization.jl file, make sure to use the correct right hand side function for the KS equation (instead of Burgers' equation) when simulating the data and doing the physical time stepping with the learned model. Comment/uncomment the appropriate lines.
+
 # Import packages
 # This is just a hack for "go to definition" to work in editor.
 if false
@@ -249,7 +251,7 @@ sigma(t) = 0.0f0 * ones(size(t))
 
 
 
-# Train model, uncomment to train (and comment out loading of trained model below)
+# Define filename to save/load trained model parameters
 if data_type == "snap"
     if snap_type == "full"
         filename = "parameters/KS_disc20_m2brownian.jld2"
@@ -262,6 +264,7 @@ elseif data_type == "closure"
 end
 
 
+# Set do_train to true to train the model, and false to load the trained model parameters. Uncomment/comment the params line to use these parameters for training (instead of training from scratch). 
 do_train = false
 if do_train
     ps_freeze, st_freeze = train(;

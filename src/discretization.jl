@@ -24,39 +24,29 @@ apply!(f, g::Grid, args) =
     end
 
 # "Burgers equation right hand side."
-# @inline function force!(f, u, g::Grid, (; visc), i)
-#     h = dx(g)
-
-#     g_i = (u[i]^2 + u[i] * u[i+1|>g] + u[i+1|>g]^2) / 6
-#     g_imin1 = (u[i-1|>g]^2 + u[i-1|>g] * u[i] + u[i]^2) / 6
-#     conv = (g_i - g_imin1) / h
-#     diff = visc * (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
-#     f[i] = -conv + diff
-# end
-
-"KS equation right hand side."
 @inline function force!(f, u, g::Grid, (; visc), i)
     h = dx(g)
 
     g_i = (u[i]^2 + u[i] * u[i+1|>g] + u[i+1|>g]^2) / 6
     g_imin1 = (u[i-1|>g]^2 + u[i-1|>g] * u[i] + u[i]^2) / 6
     conv = (g_i - g_imin1) / h
-    diff = (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
-    fourth = (u[i+2|>g] - 4 *  u[i+1|>g] + 6 * u[i] - 4 * u[i-1|>g] + u[i-2|>g]) / h^4
-    f[i] = -conv - diff - fourth
+    diff = visc * (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
+    f[i] = -conv + diff
 end
 
-
-
-# "Korteweg-de Vries equation right hand side."
-# @inline function force!(f, u, g::Grid, _, i)
+# "KS equation right hand side."
+# @inline function force!(f, u, g::Grid, (; visc), i)
 #     h = dx(g)
-#     a = (u[i] + u[i-1|>g])^2 / 4
-#     b = (u[i+1|>g] + u[i])^2 / 4
-#     # b = u[i+1|>g]^2 / 2
-#     # a = u[i-1|>g]^2 / 2
-#     f[i] = 3 * (b - a) / h - (u[i+2|>g] / 2 - u[i+1|>g] + u[i-1|>g] - u[i-2|>g] / 2) / h^3
+
+#     g_i = (u[i]^2 + u[i] * u[i+1|>g] + u[i+1|>g]^2) / 6
+#     g_imin1 = (u[i-1|>g]^2 + u[i-1|>g] * u[i] + u[i]^2) / 6
+#     conv = (g_i - g_imin1) / h
+#     diff = (u[i+1|>g] - 2 * u[i] + u[i-1|>g]) / h^2
+#     fourth = (u[i+2|>g] - 4 *  u[i+1|>g] + 6 * u[i] - 4 * u[i-1|>g] + u[i-2|>g]) / h^4
+#     f[i] = -conv - diff - fourth
 # end
+
+
 
 "Obtain closure term bar{F(u)} - F(bar{u})."
 function closureterm(u, g_dns::Grid, g_les::Grid)

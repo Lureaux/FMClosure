@@ -30,11 +30,11 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ## Running the Code
 The repository includes several main scripts for running experiments:
 
-- `main_KS.jl`: Run simulations for the Kuramoto-Sivashinsky equation.
 - `main_burgers.jl`: Run simulations for Burgers' equation.
-- `main.jl`: General entry point for other experiments.
+- `main_KS.jl`: Run simulations for the Kuramoto-Sivashinsky equation.
 
 These scripts are meant to be runned manually. 
+Make sure in the `discretization.jl` file, the `force` function is used which corresponds to the evaluated PDE.
 
 ## Data Files
 The repository includes several `.jld2` files for pre-trained parameters and datasets:
