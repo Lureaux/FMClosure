@@ -278,7 +278,7 @@ if do_train
         b,
         # params = (ps_freeze, st_freeze),
     );
-    filename = "KS_model.jld2"
+    filename = "parameters/KS_model.jld2"
     jldsave(filename; ps_freeze, st_freeze)
 end
 

@@ -222,7 +222,7 @@ if do_train
         b,
         # params = (ps_freeze, st_freeze),
     );
-    filename = "burgers_model.jld2"
+    filename = "parameters/burgers_model.jld2"
     jldsave(filename; ps_freeze, st_freeze)
 end
 
@@ -292,7 +292,7 @@ if data_type == "snap"
         lines!(ax, kbar, sbar; label = "Energy prediction")
         # ylims!(ax, 1e-16, 1e+1)
         axislegend(ax; position = :lb)
-        # save("spectrum_cutoff.png", fig)
+        # save("outdir/spectrum_cutoff.png", fig)
         # ylims!(ax, 1e-10, 1e+1)
         display(fig)
 
@@ -378,7 +378,7 @@ elseif data_type == "closure"
         lines!(ax, k, k -> 100k^-2; label = "k^-2")
         ylims!(ax, 1e-16, 1e+1)
         axislegend(ax; position = :lb)
-        # save("spectrum_cutoff.png", fig)
+        # save("outdir/spectrum_cutoff.png", fig)
         # ylims!(ax, 1e-10, 1e+1)
         display(fig)
 
@@ -598,7 +598,7 @@ let
         lines!(ax, k, s_fmdiscdiff_avg; label = "FM Discrete Difference")
         # ylims!(ax, 1e-16, 1e+1)
         axislegend(ax; position = :lb)
-        # save("Burgers_spectrum_FM_avg.pdf", fig)
+        # save("outdir/Burgers_spectrum_FM_avg.pdf", fig)
         # ylims!(ax, 1e-10, 1e+1)
     display(fig)
 end
@@ -620,7 +620,7 @@ let
         lines!(ax, k, s_fmdiscdiff_avg_avg; label = "FM Discrete Difference")
         # ylims!(ax, 1e-16, 1e+1)
         axislegend(ax; position = :lb)
-        # save("Burgers_spectrum_FM_avg_avg.pdf", fig)
+        # save("outdir/Burgers_spectrum_FM_avg_avg.pdf", fig)
         # ylims!(ax, 1e-10, 1e+1)
     display(fig)
 end
@@ -637,6 +637,6 @@ let
         lines!(range(0.0, 0.2, step=factor*1e-3), norm_fmdiscdiff_avg; label = "FM Discrete Difference", color=Cycled(4))
         axislegend(ax; position = :lt)
         ylims!(ax, 0, 0.25)
-        # save("Burgers_rel_err_FM.pdf", fig)
+        # save("outdir/Burgers_rel_err_FM.pdf", fig)
     display(fig)
 end
